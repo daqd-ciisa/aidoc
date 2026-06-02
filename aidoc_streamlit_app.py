@@ -18,7 +18,7 @@ Requisitos (requirements.txt):
     pandas
 
 Ejecución:
-    streamlit run aidoc_complete.py
+    streamlit run aidoc_streamlit_app.py
 """
 
 # ══════════════════════════════════════════════════════════════════════════════

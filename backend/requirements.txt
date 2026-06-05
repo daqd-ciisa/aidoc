@@ -37,3 +37,4 @@ langchain-text-splitters>=0.3,<0.4
 
 # ─── Auth (fase 4) ──
 pyjwt>=2.9,<3
+email-validator>=2.2,<3          # requerido por pydantic EmailStr

@@ -57,7 +57,7 @@ services:
       # Estos sobreescriben al .env (hostnames internos de la red docker).
       DATABASE_URL: postgresql+asyncpg://aidoc:aidoc@postgres:5432/aidoc
       REDIS_URL: redis://redis:6379/0
-      QDRANT_URL: http://qdrant:6333
+      # QDRANT_URL lo toma del .env (apunta al Qdrant de PCAI), no al contenedor local.
       S3_ENDPOINT_URL: http://minio:9000
     ports:
       - "8000:8000"
@@ -82,7 +82,7 @@ services:
       # Estos sobreescriben al .env (hostnames internos de la red docker).
       DATABASE_URL: postgresql+asyncpg://aidoc:aidoc@postgres:5432/aidoc
       REDIS_URL: redis://redis:6379/0
-      QDRANT_URL: http://qdrant:6333
+      # QDRANT_URL lo toma del .env (apunta al Qdrant de PCAI), no al contenedor local.
       S3_ENDPOINT_URL: http://minio:9000
     volumes:
       - ./backend:/app

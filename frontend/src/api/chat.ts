@@ -1,4 +1,5 @@
 import { apiDelete, apiGet } from "./client";
+import { authHeaders, clearToken, notifyUnauthorized } from "../lib/auth";
 import type { Citation, SessionDetail, SessionRead } from "./types";
 
 export const listSessions = () => apiGet<SessionRead[]>("/chat/sessions");
@@ -70,11 +71,15 @@ export async function streamChat(
 ): Promise<void> {
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
     signal,
   });
   if (!res.ok || !res.body) {
+    if (res.status === 401) {
+      clearToken();
+      notifyUnauthorized();
+    }
     handlers.onError?.(`HTTP ${res.status}`);
     return;
   }

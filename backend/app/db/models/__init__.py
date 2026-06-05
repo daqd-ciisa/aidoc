@@ -6,9 +6,11 @@ from app.db.models.chat import ChatMessage, ChatSession, MessageRole
 from app.db.models.document import Document, DocumentStatus
 from app.db.models.organization import Organization
 from app.db.models.quote import Quote
+from app.db.models.user import User
 
 __all__ = [
     "Organization",
+    "User",
     "Document",
     "DocumentStatus",
     "ChatSession",

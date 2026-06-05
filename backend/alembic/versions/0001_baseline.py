@@ -37,11 +37,13 @@ def upgrade() -> None:
         sa.UniqueConstraint("slug", name="uq_organization_slug"),
     )
 
-    # Tenant por defecto (single-tenant hoy).
+    # Tenant por defecto. El id ES el string 'default' a propósito: ese es el
+    # tenant_id que usan TenantMixin (default) y config.DEFAULT_TENANT_ID, así el
+    # tenant por defecto referencia una fila real. (Las DBs que sembraron el UUID
+    # antiguo '00000000-...' se reconcilian en la migración 0006.)
     op.execute(
         "INSERT INTO organization (id, slug, name, created_at, updated_at) "
-        "VALUES ('00000000-0000-0000-0000-000000000000', 'default', 'Default', "
-        "now(), now())"
+        "VALUES ('default', 'default', 'Default', now(), now())"
     )
 
 

@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-backend
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-backend
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-backend
+    spec:
+      {{- include "aidoc.imagePullSecrets" . | nindent 6 }}
+      initContainers:
+        # Espera a que Postgres acepte conexiones.
+        - name: wait-db
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z {{ .Release.Name }}-postgres 5432; do echo esperando postgres; sleep 2; done"]
+        # Corre las migraciones (alembic) antes de levantar la API.
+        - name: migrate
+          image: {{ include "aidoc.backendImage" . }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+            - secretRef:
+                name: {{ .Release.Name }}-secret
+      containers:
+        - name: backend
+          image: {{ include "aidoc.backendImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # CMD por defecto de la imagen: uvicorn ... --host 0.0.0.0 --port 8000
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-config
+            - secretRef:
+                name: {{ .Release.Name }}-secret
+          ports:
+            - containerPort: {{ .Values.backend.containerPort }}
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: {{ .Values.backend.containerPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: {{ .Values.backend.containerPort }}
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+{{ toYaml .Values.backend.resources | indent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-backend
+spec:
+  selector:
+    app: {{ .Release.Name }}-backend
+  ports:
+    - port: {{ .Values.backend.containerPort }}
+      targetPort: {{ .Values.backend.containerPort }}
+  type: ClusterIP

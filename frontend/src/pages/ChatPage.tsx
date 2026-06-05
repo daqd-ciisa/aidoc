@@ -25,10 +25,12 @@ import type {
   Citation,
   DocumentRead,
   MessageRead,
+  ProposalDraft,
   QuoteDraft,
   SessionRead,
 } from "../api/types";
 import QuotePanel from "../components/QuotePanel";
+import ProposalPanel from "../components/ProposalPanel";
 import GuidedQuoteModal from "../components/GuidedQuoteModal";
 
 interface DisplayMessage {
@@ -75,6 +77,12 @@ export default function ChatPage() {
   const [showGuided, setShowGuided] = useState(false);
   const [quoteBusy, setQuoteBusy] = useState(false);
   const [quoteErr, setQuoteErr] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<ProposalDraft | null>(null);
+  const [proposalMeta, setProposalMeta] = useState<{
+    quoteId: string;
+    title: string;
+    basedOn: BasedOn | null;
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -315,6 +323,7 @@ export default function ChatPage() {
           draft={quote}
           basedOn={basedOn}
           quoteId={quoteId}
+          onSaved={(updated) => setQuote(updated)}
           onClose={() => {
             setQuote(null);
             setBasedOn(null);
@@ -333,6 +342,25 @@ export default function ChatPage() {
             setQuoteId(id);
             setShowGuided(false);
           }}
+          onProposal={(p, b, id, title) => {
+            setProposal(p);
+            setProposalMeta({ quoteId: id, title, basedOn: b });
+            setShowGuided(false);
+          }}
+        />
+      )}
+
+      {proposal && proposalMeta && (
+        <ProposalPanel
+          proposal={proposal}
+          quoteId={proposalMeta.quoteId}
+          title={proposalMeta.title}
+          basedOn={proposalMeta.basedOn}
+          onClose={() => {
+            setProposal(null);
+            setProposalMeta(null);
+          }}
+          onSaved={(updated) => setProposal(updated)}
         />
       )}
     </div>

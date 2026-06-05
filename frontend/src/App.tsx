@@ -2,15 +2,21 @@ import { useState } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 import {
   Library,
+  Loader2,
+  LogOut,
   MessagesSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  Receipt,
   Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import ChatPage from "./pages/ChatPage";
 import LibraryPage from "./pages/LibraryPage";
+import QuotesPage from "./pages/QuotesPage";
+import LoginPage from "./pages/LoginPage";
 import ThemeToggle from "./components/ThemeToggle";
+import { useAuth } from "./context/AuthContext";
 
 const COLLAPSE_KEY = "aidoc-sidebar-collapsed";
 
@@ -54,6 +60,8 @@ export default function App() {
     }
   });
 
+  const { user, loading, logout } = useAuth();
+
   function toggle() {
     setCollapsed((c) => {
       const next = !c;
@@ -65,6 +73,16 @@ export default function App() {
       return next;
     });
   }
+
+  // Gate de autenticación: sin sesión válida no se renderiza la app.
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center bg-surface-50 dark:bg-surface-900">
+        <Loader2 className="h-6 w-6 animate-spin text-brand-500" />
+      </div>
+    );
+  }
+  if (!user) return <LoginPage />;
 
   return (
     <div className="flex h-full bg-surface-50 dark:bg-surface-900">
@@ -115,34 +133,39 @@ export default function App() {
           )}
           <NavItem to="/library" label="Biblioteca" icon={Library} collapsed={collapsed} />
           <NavItem to="/chat" label="Chat" icon={MessagesSquare} collapsed={collapsed} />
+          <NavItem to="/quotes" label="Cotizaciones" icon={Receipt} collapsed={collapsed} />
         </nav>
 
-        {/* Footer */}
-        <div
-          className={`mt-auto flex items-center py-4 ${
-            collapsed ? "flex-col gap-3 px-2" : "justify-between gap-2 px-3"
-          }`}
-        >
-          {collapsed ? (
-            <span
-              className="relative flex h-2.5 w-2.5"
-              title="Conectado"
-            >
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-400 opacity-75" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-accent-500" />
-            </span>
-          ) : (
-            <div className="flex flex-1 items-center gap-2 rounded-lg bg-surface-50 px-3 py-2.5 ring-1 ring-surface-200 dark:bg-surface-800 dark:ring-surface-700">
-              <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-accent-500" />
-              </span>
-              <span className="text-xs font-medium text-surface-500 dark:text-surface-400">
-                Conectado
-              </span>
+        {/* Footer: usuario + sesión */}
+        <div className={`mt-auto flex flex-col gap-2 py-4 ${collapsed ? "px-2" : "px-3"}`}>
+          {!collapsed && (
+            <div className="rounded-lg bg-surface-50 px-3 py-2.5 ring-1 ring-surface-200 dark:bg-surface-800 dark:ring-surface-700">
+              <div
+                className="truncate text-xs font-semibold text-surface-700 dark:text-surface-200"
+                title={user.email}
+              >
+                {user.email}
+              </div>
+              <div className="mt-0.5 text-[11px] capitalize text-surface-400 dark:text-surface-500">
+                {user.role}
+              </div>
             </div>
           )}
-          <ThemeToggle />
+          <div
+            className={`flex items-center ${
+              collapsed ? "flex-col gap-3" : "justify-between gap-2"
+            }`}
+          >
+            <button
+              onClick={logout}
+              title="Cerrar sesión"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-surface-500 transition hover:bg-red-50 hover:text-red-600 dark:text-surface-400 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+            >
+              <LogOut className="h-4 w-4" />
+              {!collapsed && "Salir"}
+            </button>
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
 
@@ -151,6 +174,7 @@ export default function App() {
           <Route path="/" element={<Navigate to="/library" replace />} />
           <Route path="/library" element={<LibraryPage />} />
           <Route path="/chat" element={<ChatPage />} />
+          <Route path="/quotes" element={<QuotesPage />} />
         </Routes>
       </main>
     </div>

@@ -1,7 +1,12 @@
-import { apiPost } from "./client";
+import { apiDelete, apiGet, apiPost, apiPut } from "./client";
+import { authHeaders } from "../lib/auth";
 import type {
   GuidedQuoteResult,
   PrecedentsResult,
+  ProposalDraft,
+  ProposalResult,
+  QuoteDraft,
+  QuoteRead,
   QuoteGenerated,
 } from "./types";
 
@@ -14,6 +19,11 @@ export interface GenerateQuoteBody {
 
 export const generateQuote = (body: GenerateQuoteBody) =>
   apiPost<QuoteGenerated>("/quotes/generate", body);
+
+// ── Listado / gestión ──────────────────────────────────────────────────────────
+
+export const listQuotes = () => apiGet<QuoteRead[]>("/quotes");
+export const deleteQuote = (id: string) => apiDelete(`/quotes/${id}`);
 
 // ── Flujo guiado por precedente ───────────────────────────────────────────────
 
@@ -32,3 +42,46 @@ export interface FromPrecedentBody {
 
 export const generateFromPrecedent = (body: FromPrecedentBody) =>
   apiPost<GuidedQuoteResult>("/quotes/from-precedent", body);
+
+/** Genera la PROPUESTA COMPLETA (todas las secciones) desde el precedente. */
+export const generateProposalFromPrecedent = (body: FromPrecedentBody) =>
+  apiPost<ProposalResult>("/quotes/proposal-from-precedent", body);
+
+/** Guarda los cambios de una propuesta completa editada a mano. */
+export const updateProposal = (
+  quoteId: string,
+  proposal: ProposalDraft,
+  title?: string | null
+) =>
+  apiPut<QuoteRead>(`/quotes/${quoteId}/proposal`, {
+    proposal,
+    title: title ?? null,
+  });
+
+/** Descarga el PDF (cotización o propuesta) con el token, y dispara la descarga. */
+export async function downloadQuotePdf(
+  quoteId: string,
+  filename: string
+): Promise<void> {
+  const res = await fetch(`/api/quotes/${quoteId}/pdf`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error("No se pudo generar el PDF");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ── Edición manual ────────────────────────────────────────────────────────────
+
+export const updateQuote = (
+  quoteId: string,
+  quote: QuoteDraft,
+  title?: string | null
+) => apiPut<QuoteRead>(`/quotes/${quoteId}`, { quote, title: title ?? null });

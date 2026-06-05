@@ -44,7 +44,7 @@ def ensure_collection() -> None:
     # Índices de payload para filtrar eficiente por tenant y documento.
     from qdrant_client.models import PayloadSchemaType
 
-    for field in ("tenant_id", "document_id"):
+    for field in ("tenant_id", "document_id", "kind"):
         try:
             client.create_payload_index(
                 settings.QDRANT_COLLECTION, field, PayloadSchemaType.KEYWORD
@@ -76,6 +76,7 @@ def upsert_chunks(
                 "page": chunk.page,
                 "chunk_index": chunk.chunk_index,
                 "text": chunk.text,
+                "kind": "chunk",
             },
         )
         for chunk, vector in zip(chunks, vectors)
@@ -86,27 +87,68 @@ def upsert_chunks(
         )
 
 
+def upsert_summary(
+    *,
+    tenant_id: str,
+    document_id: str,
+    filename: str,
+    vector: list[float],
+    summary_text: str,
+    summary: dict,
+) -> None:
+    """Sube UN punto ``kind="summary"`` por documento: vector de su resumen de alta
+    señal + el resumen estructurado en el payload. Lo usa la búsqueda de precedentes
+    (un vector representativo por documento, sin el ruido del boilerplate)."""
+    get_qdrant_client().upsert(
+        collection_name=settings.QDRANT_COLLECTION,
+        points=[
+            PointStruct(
+                id=str(uuid.uuid4()),
+                vector=vector,
+                payload={
+                    "tenant_id": tenant_id,
+                    "document_id": document_id,
+                    "filename": filename,
+                    "text": summary_text,
+                    "summary": summary,
+                    "kind": "summary",
+                },
+            )
+        ],
+    )
+
+
 def search(
     *,
     query_vector: list[float],
     tenant_id: str,
     document_ids: list[str] | None = None,
     top_k: int = 8,
+    kind: str | None = None,
 ) -> list[dict]:
-    """Busca los chunks más relevantes, aislados por tenant.
+    """Busca los puntos más relevantes, aislados por tenant.
 
-    Si ``document_ids`` viene dado, restringe la búsqueda a esos documentos.
+    Si ``document_ids`` viene dado, restringe a esos documentos. ``kind`` filtra por
+    tipo de punto: ``"summary"`` para la búsqueda de precedentes (un vector por
+    documento); por defecto (``None``) busca contenido y EXCLUYE los resúmenes.
     """
     must = [FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id))]
     if document_ids:
         must.append(
             FieldCondition(key="document_id", match=MatchAny(any=document_ids))
         )
+    must_not = None
+    if kind is not None:
+        must.append(FieldCondition(key="kind", match=MatchValue(value=kind)))
+    else:
+        # Búsqueda de contenido: excluir los puntos de resumen (tolerante con
+        # puntos viejos sin el campo "kind", que sí deben matchear).
+        must_not = [FieldCondition(key="kind", match=MatchValue(value="summary"))]
 
     results = get_qdrant_client().search(
         collection_name=settings.QDRANT_COLLECTION,
         query_vector=query_vector,
-        query_filter=Filter(must=must),
+        query_filter=Filter(must=must, must_not=must_not),
         limit=top_k,
         with_payload=True,
     )
@@ -120,6 +162,7 @@ def search(
                 "page": p.get("page"),
                 "chunk_index": p.get("chunk_index"),
                 "text": p.get("text", ""),
+                "summary": p.get("summary"),
                 "score": r.score,
             }
         )
@@ -139,7 +182,9 @@ def get_document_chunks(*, tenant_id: str, document_id: str) -> list[dict]:
                 FieldCondition(
                     key="document_id", match=MatchValue(value=document_id)
                 ),
-            ]
+            ],
+            # No incluir el punto de resumen en el contexto del documento completo.
+            must_not=[FieldCondition(key="kind", match=MatchValue(value="summary"))],
         ),
         limit=2000,
         with_payload=True,

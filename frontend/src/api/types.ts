@@ -1,3 +1,14 @@
+export type UserRole = "superadmin" | "admin" | "member";
+
+export interface User {
+  id: string;
+  email: string;
+  role: UserRole;
+  organization_id: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
 export type DocumentStatus = "pending" | "processing" | "indexed" | "failed";
 
 export interface DocumentRead {
@@ -77,12 +88,46 @@ export interface QuoteGenerated {
   citations: Citation[];
 }
 
+// ── Propuesta completa ──────────────────────────────────────────────────────────
+
+export interface ProposalSection {
+  key: string;
+  titulo: string;
+  contenido: string;
+  fuente: string; // "fijo" | "precedente" | "generado"
+}
+
+export interface ProposalDraft {
+  kind: "proposal";
+  cliente: string | null;
+  fecha: string | null;
+  secciones: ProposalSection[];
+  economica: QuoteDraft;
+}
+
+export interface ProposalResult {
+  quote_id: string;
+  title: string;
+  proposal: ProposalDraft;
+  based_on: BasedOn | null;
+  citations: Citation[];
+}
+
+export interface QuoteRead {
+  id: string;
+  title: string;
+  session_id: string | null;
+  data: QuoteDraft | ProposalDraft;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Precedent {
   document_id: string;
   filename: string;
   score: number;
-  hits: number;
   snippet: string;
+  motivo?: string | null;
 }
 
 export interface PrecedentsResult {

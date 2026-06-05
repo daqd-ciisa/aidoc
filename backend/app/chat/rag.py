@@ -99,39 +99,32 @@ def retrieve(
 def rank_documents(
     query: str,
     tenant_id: str,
-    candidate_k: int = 40,
-    top_docs: int = 3,
+    candidate_k: int = 8,
 ) -> list[dict]:
-    """Busca por similitud y agrupa los hits POR DOCUMENTO, devolviendo los
-    documentos más parecidos a ``query`` (SÍNCRONO).
+    """Devuelve los documentos candidatos a precedente, más parecidos a ``query``
+    (SÍNCRONO).
 
-    Cada documento se rankea por su mejor fragmento; ``hits`` cuenta cuántos
-    fragmentos del documento entraron en los candidatos (señal de cobertura)."""
+    Busca sobre los puntos de RESUMEN (``kind="summary"``): un vector representativo
+    por documento (su resumen de alta señal), sin el ruido del boilerplate. El orden
+    fino lo da después el rerank con LLM (ver ``summarizer.rerank_precedents``)."""
     vector = get_embeddings().embed_query(query)
     hits = qdrant.search(
-        query_vector=vector, tenant_id=tenant_id, top_k=candidate_k
+        query_vector=vector, tenant_id=tenant_id, top_k=candidate_k, kind="summary"
     )
-    groups: dict[str, dict] = {}
+    out: list[dict] = []
     for h in hits:
-        doc_id = h["document_id"]
-        if doc_id is None:
+        if h["document_id"] is None:
             continue
-        g = groups.get(doc_id)
-        if g is None:
-            groups[doc_id] = {
-                "document_id": doc_id,
+        out.append(
+            {
+                "document_id": h["document_id"],
                 "filename": h["filename"],
-                "best_score": h["score"],
-                "hits": 1,
-                "snippet": h["text"][:300],
+                "score": h["score"],
+                "summary": h.get("summary") or {},
+                "summary_text": h.get("text", ""),
             }
-        else:
-            g["hits"] += 1
-            if h["score"] > g["best_score"]:
-                g["best_score"] = h["score"]
-                g["snippet"] = h["text"][:300]
-    ranked = sorted(groups.values(), key=lambda g: g["best_score"], reverse=True)
-    return ranked[:top_docs]
+        )
+    return out
 
 
 def full_document_context(tenant_id: str, document_id: str) -> tuple[str, list[dict]]:

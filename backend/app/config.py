@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     # ── SSL (certs self-signed en PCAI) ──
     VERIFY_SSL: bool = False
 
+    # ── Auth (Fase 4) ──
+    SECRET_KEY: str = "change-me-in-prod-min-32-chars-please-rotate"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 12  # 12 h
+    # Bootstrap del super-admin de plataforma (se crea al arrancar si no existe).
+    SUPERADMIN_EMAIL: str = ""
+    SUPERADMIN_PASSWORD: str = ""
+
     @property
     def sync_database_url(self) -> str:
         """URL síncrona para Alembic (psycopg2 en lugar de asyncpg)."""

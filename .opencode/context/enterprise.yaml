@@ -1,0 +1,192 @@
+version: "1.0"
+description: "Contexto empresarial PSW DevKit - leído por el orchestrator al iniciar cada sesión"
+
+stack:
+  dotnet:
+    default_version: "10"
+    supported_versions: ["10", "9", "8"]
+    preferred_language: "C# 12"
+    nullable: true
+    implicit_using: true
+
+  database:
+    primary: "SQL Server"
+    secondary: "PostgreSQL"
+    orm_write: "Entity Framework Core 10"
+    orm_read: "Dapper"
+    migrations: "dotnet-ef"
+
+  cloud:
+    provider: "Azure"
+    container_registry: "Azure Container Registry"
+    kubernetes: "AKS"
+
+  architecture:
+    api_gateway: "YARP"
+    messaging: "Dapr Pub/Sub"
+    service_mesh: "Dapr"
+    observability: "OpenTelemetry"
+
+design_system:
+  blazor:
+    ui_framework: "MudBlazor"
+    secondary_framework: "FluentUI Blazor"
+    color_primary: "#594AE2"
+    color_secondary: "#717171"
+    font_family: "Segoe UI, Roboto, Helvetica Neue, Arial"
+    spacing_unit: "8px"
+    border_radius: "4px"
+    breakpoints:
+      xs: "0"
+      sm: "576px"
+      md: "768px"
+      lg: "992px"
+      xl: "1200px"
+
+business_rules:
+  multi_tenant:
+    type: "row-level-security"
+    tenant_resolution: "header-claim"
+    tenant_isolation: "database-per-tenant-optional"
+
+  internationalization:
+    default_locale: "es-ES"
+    supported_locales: ["es-ES", "en-US"]
+    culture_format: "es-ES"
+
+  compliance:
+    data_classification: ["public", "internal", "confidential", "restricted"]
+    retention_policy_default: "7years"
+    audit_log: true
+
+quality_standards:
+  code_coverage:
+    minimum_percent: 80
+    critical_methods: 100
+
+  cyclomatic_complexity:
+    maximum: 10
+    critical: 15
+
+  testing:
+    framework: "xUnit"
+    mocking: "NSubstitute"
+    assertions: "FluentAssertions"
+    integration_tests: "WebApplicationFactory"
+
+  security:
+    secrets_scan: true
+    dependency_scan: true
+    sast_on_build: false
+
+  build:
+    required_commands:
+      - "dotnet build --no-incremental"
+      - "dotnet test --no-build --verbosity normal"
+    warning_as_error: false
+
+templates:
+  clean_arch_microservices:
+    path: "scaffolding/clean-arch-microservices"
+    description: "Template base para microservicios Clean Architecture + DDD + CQRS"
+
+  monolith_to_microservices:
+    path: "scaffolding/monolith-to-microservices"
+    description: "Guía paso a paso para extraer bounded contexts"
+
+  saas_starter:
+    path: "scaffolding/saas-starter"
+    description: "Proyecto SaaS multi-tenant con auth, billing y admin"
+    status: "planned"
+
+  api_gateway:
+    path: "scaffolding/api-gateway"
+    description: "Solo YARP Gateway con auth centralizada"
+    status: "planned"
+
+  blazor_dashboard:
+    path: "scaffolding/blazor-dashboard"
+    description: "Dashboard administrativo con MudBlazor"
+    status: "planned"
+
+  event_sourcing:
+    path: "scaffolding/event-sourcing"
+    description: "Microservicio con Event Sourcing + CQRS"
+    status: "planned"
+
+metadata:
+  organization: "PSW"
+  team: "Desarrollo"
+  created: "2026-01-01"
+  owner: "devteam@psw.example.com"
+
+mcps:
+  description: "MCPs recomendados para el equipo .NET. Instalar via opencode mcp add <nombre>"
+
+  recommended:
+    - name: "nuget"
+      source: "npm:@modelcontextprotocol/server-nuget"
+      description: "Buscar paquetes NuGet, versiones y dependencias"
+      use_cases:
+        - "Verificar si un paquete existe antes de agregarlo"
+        - "Encontrar versiones compatibles"
+        - "Revisar dependencias transitivas"
+
+    - name: "github"
+      source: "npm:@modelcontextprotocol/server-github"
+      description: "Issues, PRs, releases y codebase de GitHub"
+      use_cases:
+        - "Buscar issues relacionados a un bug"
+        - "Revisar PRs abiertos antes de merge"
+        - "Consultar releases para versionado"
+
+    - name: "postgresql"
+      source: "npm:@modelcontextprotocol/server-postgres"
+      description: "Introspeccion de schema PostgreSQL"
+      use_cases:
+        - "Verificar tablas y columnas existentes"
+        - "Revisar constraints e indices"
+        - "Validar queries contra schema real"
+
+    - name: "docker"
+      source: "npm:@modelcontextprotocol/server-docker"
+      description: "Gestion de contenedores e imagenes"
+      use_cases:
+        - "Listar contenedores en ejecucion"
+        - "Verificar logs de servicios"
+        - "Revisar imagenes y tamanos"
+
+    - name: "fetch"
+      source: "npm:@modelcontextprotocol/server-fetch"
+      description: "HTTP requests para APIs externas"
+      use_cases:
+        - "Probar endpoints de microservicios"
+        - "Consultar documentacion online"
+        - "Validar respuestas de APIs"
+
+    - name: "filesystem"
+      source: "npm:@modelcontextprotocol/server-filesystem"
+      description: "Operaciones de filesystem seguras"
+      use_cases:
+        - "Leer archivos de configuracion"
+        - "Listar estructura de directorios"
+        - "Buscar archivos por patron"
+
+  installation:
+    command: "opencode mcp add <nombre-del-mcp>"
+    example: "opencode mcp add github"
+
+  configuration:
+    file: ".mcp.json"
+    example: |
+      {
+        "mcpServers": {
+          "github": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
+            "env": {
+              "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+            }
+          }
+        }
+      }

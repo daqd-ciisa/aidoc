@@ -8,15 +8,21 @@ import {
   Wand2,
   X,
 } from "lucide-react";
-import { findPrecedents, generateFromPrecedent } from "../api/quotes";
-import type { BasedOn, Precedent, QuoteDraft } from "../api/types";
+import {
+  findPrecedents,
+  generateFromPrecedent,
+  generateProposalFromPrecedent,
+} from "../api/quotes";
+import type { BasedOn, Precedent, ProposalDraft, QuoteDraft } from "../api/types";
 
 type Step = "input" | "select" | "generating";
+type Mode = "proposal" | "quote";
 
 export default function GuidedQuoteModal({
   sessionId,
   onClose,
   onDrafted,
+  onProposal,
 }: {
   sessionId: string | null;
   onClose: () => void;
@@ -25,8 +31,15 @@ export default function GuidedQuoteModal({
     basedOn: BasedOn | null,
     quoteId: string
   ) => void;
+  onProposal: (
+    proposal: ProposalDraft,
+    basedOn: BasedOn | null,
+    quoteId: string,
+    title: string
+  ) => void;
 }) {
   const [step, setStep] = useState<Step>("input");
+  const [mode, setMode] = useState<Mode>("proposal");
   const [request, setRequest] = useState("");
   const [precedents, setPrecedents] = useState<Precedent[]>([]);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -53,13 +66,19 @@ export default function GuidedQuoteModal({
     setBusy(true);
     setErr(null);
     setStep("generating");
+    const body = {
+      request: request.trim(),
+      document_id: documentId,
+      session_id: sessionId,
+    };
     try {
-      const res = await generateFromPrecedent({
-        request: request.trim(),
-        document_id: documentId,
-        session_id: sessionId,
-      });
-      onDrafted(res.quote, res.based_on, res.quote_id);
+      if (mode === "proposal") {
+        const res = await generateProposalFromPrecedent(body);
+        onProposal(res.proposal, res.based_on, res.quote_id, res.title);
+      } else {
+        const res = await generateFromPrecedent(body);
+        onDrafted(res.quote, res.based_on, res.quote_id);
+      }
     } catch (e) {
       setErr(String(e));
       setStep("select");
@@ -114,11 +133,36 @@ export default function GuidedQuoteModal({
           {step === "input" && (
             <div>
               <label className="mb-1.5 block text-sm font-medium text-surface-700 dark:text-surface-200">
-                ¿Qué cotización necesitás?
+                ¿Qué necesitás generar?
               </label>
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                {(
+                  [
+                    ["proposal", "Propuesta completa", "Todas las secciones + económica"],
+                    ["quote", "Solo económica", "Únicamente la tabla de precios"],
+                  ] as [Mode, string, string][]
+                ).map(([m, label, hint]) => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className={`rounded-xl border px-3 py-2.5 text-left transition ${
+                      mode === m
+                        ? "border-brand-400 bg-brand-50 dark:border-brand-500 dark:bg-brand-500/15"
+                        : "border-surface-200 bg-white hover:border-surface-300 dark:border-surface-700 dark:bg-surface-900/50 dark:hover:border-surface-600"
+                    }`}
+                  >
+                    <div className="text-sm font-semibold text-surface-800 dark:text-surface-100">
+                      {label}
+                    </div>
+                    <div className="text-[11px] text-surface-400 dark:text-surface-500">
+                      {hint}
+                    </div>
+                  </button>
+                ))}
+              </div>
               <p className="mb-3 text-xs text-surface-400 dark:text-surface-500">
-                Describila en lenguaje natural. Buscaremos en tu biblioteca una
-                parecida para usarla de base.
+                Describí el pedido en lenguaje natural. Buscaremos en tu biblioteca
+                una propuesta parecida para usarla de base.
               </p>
               <textarea
                 value={request}
@@ -182,6 +226,11 @@ export default function GuidedQuoteModal({
                           {Math.round(p.score * 100)}% afinidad
                         </span>
                       </span>
+                      {p.motivo && (
+                        <span className="mt-1 block text-xs text-surface-600 dark:text-surface-300">
+                          {p.motivo}
+                        </span>
+                      )}
                       <span className="mt-1 line-clamp-2 block text-xs text-surface-400 dark:text-surface-500">
                         {p.snippet}
                       </span>

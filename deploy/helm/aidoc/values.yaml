@@ -1,0 +1,87 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# values.yaml de AIDOC para HPE PCAI.
+# Editá la sección `image` con tu registry/usuario antes de desplegar.
+# Los secretos (tokens PCAI, passwords) conviene pasarlos con --set o un Secret
+# aparte en producción; acá van defaults para arrancar.
+# ──────────────────────────────────────────────────────────────────────────────
+
+image:
+  # Registry + namespace donde subiste las imágenes (Docker Hub: tu-usuario).
+  registry: docker.io
+  namespace: axeljuarez          # usuario de Docker Hub
+  backendRepo: aidoc-backend     # imagen usada por backend Y worker
+  frontendRepo: aidoc-frontend   # imagen nginx + build de la SPA
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+# Para repos privados: kubectl create secret docker-registry dockerhub-cred ...
+# y luego: imagePullSecrets: [{name: dockerhub-cred}]
+imagePullSecrets: []
+
+backend:
+  replicas: 1
+  containerPort: 8000
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits:   { cpu: "2",    memory: "2Gi" }
+
+worker:
+  replicas: 1
+  resources:
+    requests: { cpu: "500m", memory: "1Gi" }
+    limits:   { cpu: "2",    memory: "2Gi" }
+
+frontend:
+  replicas: 1
+  containerPort: 8080
+  servicePort: 80
+  resources:
+    requests: { cpu: "100m", memory: "128Mi" }
+    limits:   { cpu: "500m", memory: "256Mi" }
+
+# ── Infra bundleada (MVP). Poné enabled:false para usar servicios externos ──────
+postgres:
+  enabled: true
+  image: postgres:16
+  user: aidoc
+  password: aidoc            # <-- cambiar en prod
+  db: aidoc
+  storage: 5Gi
+  storageClassName: ""       # "" = StorageClass por defecto del cluster
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+
+minio:
+  enabled: true
+  image: minio/minio:latest
+  rootUser: aidoc
+  rootPassword: aidoc-secret  # <-- cambiar en prod
+  bucket: aidoc-documents
+  storage: 20Gi
+  storageClassName: ""
+
+# ── Conexión a modelos NVIDIA NIM y Qdrant en PCAI (no secreto) ─────────────────
+config:
+  qdrantUrl: "https://qdrant.ai-application.ciisagl.local:443"
+  qdrantCollection: "aidoc_documents"
+  embeddingsUrl: "https://emb-qwen3-06b.project-user-jmartinez.serving.ai-application.ciisagl.local/v1"
+  embedModel: "Qwen/Qwen3-Embedding-0.6B"
+  embedDimensions: 1024
+  llmUrl: "https://llm-qwen3-30b-042026.project-pyxiia-proyectos.serving.ai-application.ciisagl.local/v1"
+  llmModel: "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"
+  verifySsl: false
+  corsOrigins: "[]"   # mismo origen (nginx proxya /api) -> no hace falta CORS
+
+# ── Secretos (tokens PCAI + API keys). Sobreescribir en prod. ───────────────────
+secrets:
+  llmApiKey: ""          # JWT del endpoint LLM de PCAI (vence ~2026-06-30)
+  embeddingsApiKey: ""   # JWT del endpoint de embeddings de PCAI
+  qdrantApiKey: ""       # vacío: PCAI despliega Qdrant con apiKey:false
+
+# ── Exposición vía Istio (patrón PCAI / EzUA) ───────────────────────────────────
+ezua:
+  virtualService:
+    endpoint: "aidoc.${DOMAIN_NAME}"
+    istioGateway: "istio-system/ezaf-gateway"

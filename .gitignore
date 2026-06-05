@@ -12,6 +12,8 @@ venv/
 .env
 *.env
 !.env.example
+deploy/tokens-para-pegar.txt
+deploy/helm/*.tgz
 
 # Node / frontend
 node_modules/

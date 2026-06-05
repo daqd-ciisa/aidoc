@@ -1,0 +1,6 @@
+apiVersion: v2
+name: aidoc
+description: AIDOC - plataforma RAG documental + cotizaciones (deploy en HPE PCAI)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

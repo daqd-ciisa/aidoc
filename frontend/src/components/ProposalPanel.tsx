@@ -1,0 +1,495 @@
+import { useState } from "react";
+import {
+  Check,
+  FileDown,
+  FileText,
+  Loader2,
+  Plus,
+  ScrollText,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
+import type {
+  BasedOn,
+  ProposalDraft,
+  ProposalSection,
+  QuoteItem,
+} from "../api/types";
+import { downloadQuotePdf, updateProposal } from "../api/quotes";
+
+const IVA_RATE = 0.16;
+
+function fmt(n: number | null, currency?: string | null): string {
+  if (n == null) return "—";
+  const s = n.toLocaleString("es-MX", { minimumFractionDigits: 2 });
+  return currency ? `${currency} ${s}` : s;
+}
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+function toNum(s: string): number | null {
+  if (s.trim() === "") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+const inputCls =
+  "w-full rounded-lg border border-surface-300 bg-white px-2.5 py-1.5 text-sm text-surface-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-100 dark:focus:border-brand-500 dark:focus:ring-brand-500/20";
+
+const FUENTE_LABEL: Record<string, string> = {
+  fijo: "Fijo",
+  precedente: "Del precedente",
+  generado: "Generado por IA",
+};
+
+export default function ProposalPanel({
+  proposal,
+  quoteId,
+  title,
+  basedOn,
+  onClose,
+  onSaved,
+}: {
+  proposal: ProposalDraft;
+  quoteId: string;
+  title: string;
+  basedOn?: BasedOn | null;
+  onClose: () => void;
+  onSaved?: (updated: ProposalDraft) => void;
+}) {
+  const [form, setForm] = useState<ProposalDraft>(proposal);
+  const [taxAuto, setTaxAuto] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const econ = form.economica;
+  const cur = econ.moneda;
+
+  // Totales de la económica recalculados en vivo.
+  const editItems = econ.items.map((it) => ({
+    ...it,
+    importe: round2((it.cantidad ?? 0) * (it.precio_unitario ?? 0)),
+  }));
+  const editSubtotal = round2(editItems.reduce((a, it) => a + (it.importe ?? 0), 0));
+  const autoTax = round2(editSubtotal * IVA_RATE);
+  const editTax = taxAuto ? autoTax : econ.impuestos ?? 0;
+  const editTotal = round2(editSubtotal + editTax);
+
+  function patchSection(key: string, contenido: string) {
+    setForm((f) => ({
+      ...f,
+      secciones: f.secciones.map((s) =>
+        s.key === key ? { ...s, contenido } : s
+      ),
+    }));
+  }
+  function patchEcon(patch: Partial<typeof econ>) {
+    setForm((f) => ({ ...f, economica: { ...f.economica, ...patch } }));
+  }
+  function patchItem(i: number, patch: Partial<QuoteItem>) {
+    setForm((f) => ({
+      ...f,
+      economica: {
+        ...f.economica,
+        items: f.economica.items.map((it, idx) =>
+          idx === i ? { ...it, ...patch } : it
+        ),
+      },
+    }));
+  }
+  function addItem() {
+    setForm((f) => ({
+      ...f,
+      economica: {
+        ...f.economica,
+        items: [
+          ...f.economica.items,
+          { servicio: "", descripcion: null, cantidad: 1, precio_unitario: null, importe: null },
+        ],
+      },
+    }));
+  }
+  function removeItem(i: number) {
+    setForm((f) => ({
+      ...f,
+      economica: {
+        ...f.economica,
+        items: f.economica.items.filter((_, idx) => idx !== i),
+      },
+    }));
+  }
+
+  function buildUpdated(): ProposalDraft {
+    return {
+      ...form,
+      economica: {
+        ...form.economica,
+        items: editItems,
+        subtotal: editSubtotal,
+        impuestos: editTax,
+        total: editTotal,
+      },
+    };
+  }
+
+  async function save(): Promise<ProposalDraft | null> {
+    setSaving(true);
+    setSaved(false);
+    setErr(null);
+    const updated = buildUpdated();
+    try {
+      await updateProposal(quoteId, updated, title);
+      setForm(updated);
+      onSaved?.(updated);
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2500);
+      return updated;
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAndDownload() {
+    const updated = await save();
+    if (!updated) return;
+    setDownloading(true);
+    try {
+      await downloadQuotePdf(quoteId, title || "propuesta");
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-surface-900/40 p-4 backdrop-blur-sm animate-fade-in dark:bg-black/60">
+      <div
+        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-pop animate-scale-in dark:bg-surface-800"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-surface-200 px-6 py-4 dark:border-surface-700">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
+              <ScrollText className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-surface-900 dark:text-surface-50">
+                Propuesta completa
+              </h2>
+              <p className="text-xs text-surface-400 dark:text-surface-500">
+                Editá las secciones y la económica, luego descargá el PDF
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-surface-400 transition hover:bg-surface-100 hover:text-surface-700 dark:text-surface-500 dark:hover:bg-surface-700 dark:hover:text-surface-200"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {basedOn && (
+            <div className="mb-4 flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-700 ring-1 ring-brand-100 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/20">
+              <FileText className="h-4 w-4 shrink-0" />
+              <span>
+                Generada usando como base:{" "}
+                <span className="font-semibold">{basedOn.filename}</span>
+              </span>
+            </div>
+          )}
+
+          {/* Cabecera */}
+          <div className="mb-5 grid grid-cols-3 gap-4">
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+                Cliente
+              </label>
+              <input
+                className={`${inputCls} mt-1`}
+                value={form.cliente ?? ""}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, cliente: e.target.value || null }))
+                }
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+                Fecha
+              </label>
+              <input
+                className={`${inputCls} mt-1`}
+                value={form.fecha ?? ""}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, fecha: e.target.value || null }))
+                }
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+                Moneda
+              </label>
+              <input
+                className={`${inputCls} mt-1`}
+                value={econ.moneda ?? ""}
+                placeholder="MXN"
+                onChange={(e) => patchEcon({ moneda: e.target.value || null })}
+              />
+            </div>
+          </div>
+
+          {/* Secciones */}
+          <div className="space-y-5">
+            {form.secciones.map((sec: ProposalSection) =>
+              sec.key === "economica" ? (
+                <Economica
+                  key={sec.key}
+                  titulo={sec.titulo}
+                  items={econ.items}
+                  editItems={editItems}
+                  subtotal={editSubtotal}
+                  tax={editTax}
+                  total={editTotal}
+                  taxAuto={taxAuto}
+                  cur={cur}
+                  onPatchItem={patchItem}
+                  onAddItem={addItem}
+                  onRemoveItem={removeItem}
+                  onTax={(v) => {
+                    setTaxAuto(false);
+                    patchEcon({ impuestos: v });
+                  }}
+                  onTaxAuto={() => setTaxAuto(true)}
+                />
+              ) : (
+                <div key={sec.key}>
+                  <div className="mb-1 flex items-center gap-2">
+                    <label className="text-sm font-bold text-surface-800 dark:text-surface-100">
+                      {sec.titulo}
+                    </label>
+                    <span className="rounded-full bg-surface-100 px-1.5 py-0.5 text-[10px] font-medium text-surface-500 dark:bg-surface-700 dark:text-surface-400">
+                      {FUENTE_LABEL[sec.fuente] ?? sec.fuente}
+                    </span>
+                  </div>
+                  <textarea
+                    className={`${inputCls} min-h-[90px] resize-y leading-relaxed`}
+                    value={sec.contenido}
+                    onChange={(e) => patchSection(sec.key, e.target.value)}
+                  />
+                </div>
+              )
+            )}
+          </div>
+
+          {err && (
+            <div className="mt-4 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 ring-1 ring-red-200 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/30">
+              {err}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 border-t border-surface-200 bg-surface-50 px-6 py-3.5 dark:border-surface-700 dark:bg-surface-900/50">
+          {saved && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 animate-fade-in dark:text-emerald-400">
+              <Check className="h-3.5 w-3.5" />
+              Guardado
+            </span>
+          )}
+          <button
+            onClick={() => save()}
+            disabled={saving || downloading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-200 dark:hover:border-brand-600 dark:hover:bg-brand-500/10"
+          >
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
+            Guardar
+          </button>
+          <button
+            onClick={saveAndDownload}
+            disabled={saving || downloading}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-1.5 text-xs font-medium text-white shadow-soft transition hover:bg-brand-600 disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-400"
+          >
+            {downloading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileDown className="h-3.5 w-3.5" />
+            )}
+            Guardar y descargar PDF
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Economica({
+  titulo,
+  items,
+  editItems,
+  subtotal,
+  tax,
+  total,
+  taxAuto,
+  cur,
+  onPatchItem,
+  onAddItem,
+  onRemoveItem,
+  onTax,
+  onTaxAuto,
+}: {
+  titulo: string;
+  items: QuoteItem[];
+  editItems: QuoteItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  taxAuto: boolean;
+  cur: string | null;
+  onPatchItem: (i: number, patch: Partial<QuoteItem>) => void;
+  onAddItem: () => void;
+  onRemoveItem: (i: number) => void;
+  onTax: (v: number | null) => void;
+  onTaxAuto: () => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-sm font-bold text-surface-800 dark:text-surface-100">
+        {titulo}
+      </label>
+      <div className="overflow-hidden rounded-xl border border-surface-200 dark:border-surface-700">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-surface-200 bg-surface-50 text-left text-[11px] font-semibold uppercase tracking-wider text-surface-500 dark:border-surface-700 dark:bg-surface-900/50 dark:text-surface-400">
+              <th className="px-3 py-2.5">Servicio</th>
+              <th className="px-2 py-2.5 text-right">Cant.</th>
+              <th className="px-2 py-2.5 text-right">P. unit.</th>
+              <th className="px-3 py-2.5 text-right">Importe</th>
+              <th className="w-10 px-2 py-2.5" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-surface-100 dark:divide-surface-700">
+            {items.map((it, i) => (
+              <tr key={i} className="align-top">
+                <td className="px-3 py-2.5">
+                  <input
+                    className={inputCls}
+                    placeholder="Servicio"
+                    value={it.servicio}
+                    onChange={(e) => onPatchItem(i, { servicio: e.target.value })}
+                  />
+                  <input
+                    className={`${inputCls} mt-1.5 text-xs`}
+                    placeholder="Descripción (opcional)"
+                    value={it.descripcion ?? ""}
+                    onChange={(e) =>
+                      onPatchItem(i, { descripcion: e.target.value || null })
+                    }
+                  />
+                </td>
+                <td className="px-2 py-2.5">
+                  <input
+                    type="number"
+                    step="any"
+                    className={`${inputCls} text-right`}
+                    value={it.cantidad ?? ""}
+                    onChange={(e) =>
+                      onPatchItem(i, { cantidad: toNum(e.target.value) })
+                    }
+                  />
+                </td>
+                <td className="px-2 py-2.5">
+                  <input
+                    type="number"
+                    step="any"
+                    className={`${inputCls} text-right`}
+                    value={it.precio_unitario ?? ""}
+                    onChange={(e) =>
+                      onPatchItem(i, { precio_unitario: toNum(e.target.value) })
+                    }
+                  />
+                </td>
+                <td className="px-3 py-2.5 text-right align-middle tabular-nums font-medium text-surface-800 dark:text-surface-100">
+                  {fmt(editItems[i].importe)}
+                </td>
+                <td className="px-2 py-2.5 align-middle">
+                  <button
+                    onClick={() => onRemoveItem(i)}
+                    title="Quitar ítem"
+                    className="rounded-md p-1.5 text-surface-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button
+          onClick={onAddItem}
+          className="flex w-full items-center justify-center gap-1.5 border-t border-surface-200 bg-surface-50 py-2 text-xs font-medium text-brand-600 transition hover:bg-brand-50 dark:border-surface-700 dark:bg-surface-900/50 dark:text-brand-400 dark:hover:bg-brand-500/10"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Agregar ítem
+        </button>
+      </div>
+
+      <div className="mt-3 flex justify-end">
+        <dl className="w-64 space-y-1.5 text-sm">
+          <div className="flex items-center justify-between">
+            <dt className="text-surface-500 dark:text-surface-400">Subtotal</dt>
+            <dd className="tabular-nums text-surface-700 dark:text-surface-200">
+              {fmt(subtotal, cur)}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <dt className="flex items-center gap-1.5 text-surface-500 dark:text-surface-400">
+              Impuestos
+              {taxAuto ? (
+                <span className="text-[10px] font-medium text-surface-400 dark:text-surface-500">
+                  IVA 16%
+                </span>
+              ) : (
+                <button
+                  onClick={onTaxAuto}
+                  title="Calcular IVA 16% automáticamente"
+                  className="text-[10px] font-medium text-brand-600 transition hover:text-brand-700 dark:text-brand-400"
+                >
+                  IVA 16%
+                </button>
+              )}
+            </dt>
+            <dd className="tabular-nums text-surface-700 dark:text-surface-200">
+              <input
+                type="number"
+                step="any"
+                className={`${inputCls} w-28 text-right`}
+                value={tax}
+                onChange={(e) => onTax(toNum(e.target.value))}
+              />
+            </dd>
+          </div>
+          <div className="flex items-center justify-between border-t border-surface-200 pt-1.5 text-base font-bold text-surface-900 dark:border-surface-700 dark:text-surface-50">
+            <dt>Total</dt>
+            <dd className="tabular-nums text-brand-700 dark:text-brand-300">
+              {fmt(total, cur)}
+            </dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+  );
+}

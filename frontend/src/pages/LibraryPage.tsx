@@ -279,14 +279,14 @@ export default function LibraryPage() {
 
         {/* Tabla de documentos */}
         <div className="overflow-hidden rounded-xl border border-surface-200 bg-white shadow-soft dark:border-surface-800 dark:bg-surface-800/40">
-          <table className="w-full text-sm">
+          <table className="w-full table-fixed text-sm">
             <thead>
               <tr className="border-b border-surface-200 bg-surface-50 text-left text-[11px] font-semibold uppercase tracking-wider text-surface-500 dark:border-surface-800 dark:bg-surface-800/60 dark:text-surface-400">
                 <th className="px-5 py-3">Documento</th>
-                <th className="px-5 py-3">Estado</th>
-                <th className="px-5 py-3">Fragmentos</th>
-                <th className="px-5 py-3">Tamaño</th>
-                <th className="px-5 py-3 text-right">Acciones</th>
+                <th className="w-32 px-5 py-3">Estado</th>
+                <th className="w-28 px-5 py-3">Fragmentos</th>
+                <th className="w-28 px-5 py-3">Tamaño</th>
+                <th className="w-44 px-5 py-3 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-100 dark:divide-surface-800">

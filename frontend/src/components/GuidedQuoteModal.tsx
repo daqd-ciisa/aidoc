@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ArrowLeft,
+  Check,
   FileText,
   Loader2,
   Search,
@@ -10,39 +11,37 @@ import {
 } from "lucide-react";
 import {
   findPrecedents,
-  generateFromPrecedent,
   generateProposalFromPrecedent,
+  generateProposalFromScratch,
 } from "../api/quotes";
-import type { BasedOn, Precedent, ProposalDraft, QuoteDraft } from "../api/types";
+import type { BasedOn, Precedent, ProposalDraft } from "../api/types";
 
 type Step = "input" | "select" | "generating";
-type Mode = "proposal" | "quote";
+type Source = "precedent" | "scratch";
+
+type GenResult = { based_on: BasedOn | null; based_on_all?: BasedOn[] | null };
+const allOf = (res: GenResult): BasedOn[] =>
+  res.based_on_all ?? (res.based_on ? [res.based_on] : []);
 
 export default function GuidedQuoteModal({
   sessionId,
   onClose,
-  onDrafted,
   onProposal,
 }: {
   sessionId: string | null;
   onClose: () => void;
-  onDrafted: (
-    draft: QuoteDraft,
-    basedOn: BasedOn | null,
-    quoteId: string
-  ) => void;
   onProposal: (
     proposal: ProposalDraft,
-    basedOn: BasedOn | null,
+    basedOn: BasedOn[] | null,
     quoteId: string,
     title: string
   ) => void;
 }) {
   const [step, setStep] = useState<Step>("input");
-  const [mode, setMode] = useState<Mode>("proposal");
+  const [source, setSource] = useState<Source>("precedent");
   const [request, setRequest] = useState("");
   const [precedents, setPrecedents] = useState<Precedent[]>([]);
-  const [chosen, setChosen] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -51,8 +50,12 @@ export default function GuidedQuoteModal({
     setBusy(true);
     setErr(null);
     try {
-      const res = await findPrecedents(request.trim());
+      // Mostramos un pool más amplio (no solo el top 3): con multi-selección, un
+      // pedido mixto (p. ej. producto + servicio) necesita ver candidatos de ambas
+      // categorías para poder combinarlos.
+      const res = await findPrecedents(request.trim(), 6);
       setPrecedents(res.precedents);
+      setChosen(res.precedents.length > 0 ? [res.precedents[0].document_id] : []);
       setStep("select");
     } catch (e) {
       setErr(String(e));
@@ -61,24 +64,27 @@ export default function GuidedQuoteModal({
     }
   }
 
-  async function generate(documentId: string) {
-    setChosen(documentId);
+  function toggle(documentId: string) {
+    setChosen((c) =>
+      c.includes(documentId)
+        ? c.filter((x) => x !== documentId)
+        : [...c, documentId]
+    );
+  }
+
+  async function generate() {
+    if (chosen.length === 0 || busy) return;
     setBusy(true);
     setErr(null);
     setStep("generating");
     const body = {
       request: request.trim(),
-      document_id: documentId,
+      document_ids: chosen,
       session_id: sessionId,
     };
     try {
-      if (mode === "proposal") {
-        const res = await generateProposalFromPrecedent(body);
-        onProposal(res.proposal, res.based_on, res.quote_id, res.title);
-      } else {
-        const res = await generateFromPrecedent(body);
-        onDrafted(res.quote, res.based_on, res.quote_id);
-      }
+      const res = await generateProposalFromPrecedent(body);
+      onProposal(res.proposal, allOf(res), res.quote_id, res.title);
     } catch (e) {
       setErr(String(e));
       setStep("select");
@@ -87,8 +93,26 @@ export default function GuidedQuoteModal({
     }
   }
 
-  const chosenName =
-    precedents.find((p) => p.document_id === chosen)?.filename ?? "";
+  async function generateScratch() {
+    if (!request.trim() || busy) return;
+    setBusy(true);
+    setErr(null);
+    setStep("generating");
+    const body = { request: request.trim(), session_id: sessionId };
+    try {
+      const res = await generateProposalFromScratch(body);
+      onProposal(res.proposal, allOf(res), res.quote_id, res.title);
+    } catch (e) {
+      setErr(String(e));
+      setStep("input");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const chosenNames = precedents
+    .filter((p) => chosen.includes(p.document_id))
+    .map((p) => p.filename);
 
   return (
     <div
@@ -110,7 +134,7 @@ export default function GuidedQuoteModal({
                 Cotización guiada
               </h2>
               <p className="text-xs text-surface-400 dark:text-surface-500">
-                Se basa en una cotización existente parecida
+                A partir de un precedente o desde cero
               </p>
             </div>
           </div>
@@ -133,20 +157,20 @@ export default function GuidedQuoteModal({
           {step === "input" && (
             <div>
               <label className="mb-1.5 block text-sm font-medium text-surface-700 dark:text-surface-200">
-                ¿Qué necesitás generar?
+                ¿En qué se basa?
               </label>
               <div className="mb-3 grid grid-cols-2 gap-2">
                 {(
                   [
-                    ["proposal", "Propuesta completa", "Todas las secciones + económica"],
-                    ["quote", "Solo económica", "Únicamente la tabla de precios"],
-                  ] as [Mode, string, string][]
-                ).map(([m, label, hint]) => (
+                    ["precedent", "Con precedente", "Busca una cotización parecida"],
+                    ["scratch", "Desde cero", "Sin precedente, solo tu pedido"],
+                  ] as [Source, string, string][]
+                ).map(([s, label, hint]) => (
                   <button
-                    key={m}
-                    onClick={() => setMode(m)}
+                    key={s}
+                    onClick={() => setSource(s)}
                     className={`rounded-xl border px-3 py-2.5 text-left transition ${
-                      mode === m
+                      source === s
                         ? "border-brand-400 bg-brand-50 dark:border-brand-500 dark:bg-brand-500/15"
                         : "border-surface-200 bg-white hover:border-surface-300 dark:border-surface-700 dark:bg-surface-900/50 dark:hover:border-surface-600"
                     }`}
@@ -161,14 +185,18 @@ export default function GuidedQuoteModal({
                 ))}
               </div>
               <p className="mb-3 text-xs text-surface-400 dark:text-surface-500">
-                Describí el pedido en lenguaje natural. Buscaremos en tu biblioteca
-                una propuesta parecida para usarla de base.
+                {source === "precedent"
+                  ? "Describí el pedido en lenguaje natural. Buscaremos en tu biblioteca una cotización parecida para usarla de base."
+                  : "Describí el pedido en lenguaje natural. Armaremos un borrador desde cero (sin precedente) con los precios en blanco para que los completes."}
               </p>
               <textarea
                 value={request}
                 onChange={(e) => setRequest(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) search();
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    if (source === "scratch") generateScratch();
+                    else search();
+                  }
                 }}
                 rows={4}
                 autoFocus
@@ -176,16 +204,24 @@ export default function GuidedQuoteModal({
                 className="w-full resize-none rounded-xl border border-surface-300 bg-white px-3.5 py-2.5 text-sm text-surface-800 placeholder:text-surface-400 transition focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100 dark:placeholder:text-surface-500 dark:focus:border-brand-600 dark:focus:ring-brand-500/20"
               />
               <button
-                onClick={search}
+                onClick={source === "scratch" ? generateScratch : search}
                 disabled={!request.trim() || busy}
                 className="btn-primary mt-4 w-full"
               >
                 {busy ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
+                ) : source === "scratch" ? (
+                  <Wand2 className="h-4 w-4" />
                 ) : (
                   <Search className="h-4 w-4" />
                 )}
-                {busy ? "Buscando…" : "Buscar precedentes"}
+                {busy
+                  ? source === "scratch"
+                    ? "Generando…"
+                    : "Buscando…"
+                  : source === "scratch"
+                    ? "Generar desde cero"
+                    : "Buscar precedentes"}
               </button>
             </div>
           )}
@@ -202,47 +238,92 @@ export default function GuidedQuoteModal({
               </button>
               <p className="mb-3 text-sm text-surface-700 dark:text-surface-200">
                 {precedents.length > 0
-                  ? "Elegí la cotización que querés usar como base:"
+                  ? "Elegí una o varias cotizaciones para usar como base:"
                   : "No encontramos una cotización parecida."}
               </p>
 
               <div className="space-y-2">
-                {precedents.map((p) => (
-                  <button
-                    key={p.document_id}
-                    onClick={() => generate(p.document_id)}
-                    disabled={busy}
-                    className="group flex w-full items-start gap-3 rounded-xl border border-surface-200 bg-white px-4 py-3 text-left transition hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50 dark:border-surface-700 dark:bg-surface-900/50 dark:hover:border-brand-600 dark:hover:bg-surface-800"
-                  >
-                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-100 text-surface-500 transition group-hover:bg-brand-100 group-hover:text-brand-600 dark:bg-surface-700 dark:text-surface-400 dark:group-hover:bg-brand-500/20 dark:group-hover:text-brand-300">
-                      <FileText className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium text-surface-800 dark:text-surface-100">
-                          {p.filename}
+                {precedents.map((p) => {
+                  const sel = chosen.includes(p.document_id);
+                  return (
+                    <button
+                      key={p.document_id}
+                      onClick={() => toggle(p.document_id)}
+                      disabled={busy}
+                      className={`group flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition disabled:opacity-50 ${
+                        sel
+                          ? "border-brand-400 bg-brand-50 ring-1 ring-brand-200 dark:border-brand-500 dark:bg-brand-500/15 dark:ring-brand-500/30"
+                          : "border-surface-200 bg-white hover:border-brand-300 hover:bg-brand-50/50 dark:border-surface-700 dark:bg-surface-900/50 dark:hover:border-brand-600 dark:hover:bg-surface-800"
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${
+                          sel
+                            ? "bg-brand-500 text-white dark:bg-brand-500"
+                            : "bg-surface-100 text-surface-500 group-hover:bg-brand-100 group-hover:text-brand-600 dark:bg-surface-700 dark:text-surface-400 dark:group-hover:bg-brand-500/20 dark:group-hover:text-brand-300"
+                        }`}
+                      >
+                        {sel ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <FileText className="h-4 w-4" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-medium text-surface-800 dark:text-surface-100">
+                            {p.filename}
+                          </span>
+                          <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+                            {Math.round(p.score * 100)}% afinidad
+                          </span>
                         </span>
-                        <span className="shrink-0 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
-                          {Math.round(p.score * 100)}% afinidad
+                        {p.motivo && (
+                          <span className="mt-1 block text-xs text-surface-600 dark:text-surface-300">
+                            {p.motivo}
+                          </span>
+                        )}
+                        <span className="mt-1 line-clamp-2 block text-xs text-surface-400 dark:text-surface-500">
+                          {p.snippet}
                         </span>
                       </span>
-                      {p.motivo && (
-                        <span className="mt-1 block text-xs text-surface-600 dark:text-surface-300">
-                          {p.motivo}
-                        </span>
-                      )}
-                      <span className="mt-1 line-clamp-2 block text-xs text-surface-400 dark:text-surface-500">
-                        {p.snippet}
-                      </span>
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
 
-              <p className="mt-4 text-center text-[11px] text-surface-400 dark:text-surface-500">
-                La nueva cotización reutilizará ítems y precios del precedente,
-                ajustados a tu pedido. Revisá los montos antes de enviarla.
-              </p>
+              {precedents.length > 0 && (
+                <>
+                  <button
+                    onClick={generate}
+                    disabled={chosen.length === 0 || busy}
+                    className="btn-primary mt-4 w-full"
+                  >
+                    <Wand2 className="h-4 w-4" />
+                    {chosen.length > 1
+                      ? `Generar combinando ${chosen.length} precedentes`
+                      : "Generar"}
+                  </button>
+                  <p className="mt-3 text-center text-[11px] text-surface-400 dark:text-surface-500">
+                    Si elegís varios, se usa el más cercano como base y se completan
+                    los datos faltantes con los otros. Revisá los montos antes de
+                    enviarla.
+                  </p>
+                </>
+              )}
+
+              {(precedents.length === 0 ||
+                (precedents[0]?.score ?? 0) < 0.5) && (
+                <button
+                  onClick={generateScratch}
+                  disabled={busy}
+                  className="mt-3 w-full rounded-xl border border-dashed border-surface-300 px-3 py-2.5 text-xs font-medium text-surface-500 transition hover:border-brand-300 hover:text-brand-600 disabled:opacity-50 dark:border-surface-600 dark:text-surface-400 dark:hover:border-brand-600 dark:hover:text-brand-300"
+                >
+                  {precedents.length === 0
+                    ? "Generar desde cero (sin precedente)"
+                    : "¿Ninguno encaja? Generar desde cero"}
+                </button>
+              )}
             </div>
           )}
 
@@ -255,9 +336,9 @@ export default function GuidedQuoteModal({
               <p className="text-sm font-medium text-surface-700 dark:text-surface-200">
                 Generando cotización…
               </p>
-              {chosenName && (
+              {chosenNames.length > 0 && (
                 <p className="mt-1 text-xs text-surface-400 dark:text-surface-500">
-                  Basándose en {chosenName}
+                  Basándose en {chosenNames.join(", ")}
                 </p>
               )}
               <Loader2 className="mt-4 h-5 w-5 animate-spin text-brand-500" />

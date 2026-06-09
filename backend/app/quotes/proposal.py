@@ -15,7 +15,12 @@ import asyncio
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
-from app.quotes.extractor import _parse_json, draft_from_precedent
+from app.quotes.extractor import (
+    _parse_json,
+    draft_from_precedent,
+    draft_from_scratch,
+    strip_precedent_labels,
+)
 from app.quotes.schema import QuoteDraft
 from app.services.llm import get_chat_llm
 
@@ -139,9 +144,10 @@ def commercial_terms(economica: QuoteDraft, fecha: str) -> str:
 
 _SECTIONS_SYSTEM = (
     "Eres un consultor de CiiSA que redacta propuestas técnico-económicas de TI.\n"
-    "Te paso una PROPUESTA PRECEDENTE (similar) y el PEDIDO del nuevo cliente. Redactá "
-    "las secciones de la NUEVA propuesta, adaptando el precedente al pedido (cliente, "
-    "alcance, cantidades).\n"
+    "Te paso UNA O VARIAS PROPUESTAS PRECEDENTES (similares), cada una etiquetada como "
+    "[PRECEDENTE n: archivo], y el PEDIDO del nuevo cliente. Redactá las secciones de la "
+    "NUEVA propuesta, adaptando los precedentes al pedido (cliente, alcance, cantidades). "
+    "Si hay varios, usá el más cercano como base y completá lo que falte con los otros.\n"
     "Devolvé ÚNICAMENTE un objeto JSON con EXACTAMENTE estas claves (cada valor es texto; "
     'podés usar viñetas con "- " y saltos de línea):\n'
     '{"objetivo": string, "alcances": string, "limitantes": string, "terminos": string}\n'
@@ -154,7 +160,26 @@ _SECTIONS_SYSTEM = (
     "responsabilidades). NO incluyas vigencia de la propuesta, precios, IVA ni formas de "
     "pago: eso va en otra sección.\n"
     "Reglas: NO copies fechas absolutas ni vigencias del precedente. NO inventes precios. "
+    "NO uses las etiquetas internas [PRECEDENTE n] en el texto de salida. "
     "Mantené el tono profesional y formal de CiiSA. No incluyas nada fuera del JSON."
+)
+
+
+_SECTIONS_SCRATCH_SYSTEM = (
+    "Eres un consultor de CiiSA que redacta propuestas técnico-económicas de TI.\n"
+    "NO hay propuesta precedente. Redactá las secciones de la propuesta SOLO a partir "
+    "del PEDIDO del cliente, con el tono profesional y formal de CiiSA.\n"
+    "Devolvé ÚNICAMENTE un objeto JSON con EXACTAMENTE estas claves (cada valor es texto; "
+    'podés usar viñetas con "- " y saltos de línea):\n'
+    '{"objetivo": string, "alcances": string, "limitantes": string, "terminos": string}\n'
+    "Guía:\n"
+    '- "objetivo": objetivo y antecedentes del proyecto para el cliente del pedido.\n'
+    '- "alcances": los alcances técnicos / servicios incluidos, inferidos del pedido.\n'
+    '- "limitantes": limitantes y lo NO incluido (supuestos razonables).\n'
+    '- "terminos": términos y condiciones del servicio (horarios, tiempos de respuesta, '
+    "responsabilidades). NO incluyas vigencia de la propuesta, precios, IVA ni formas de "
+    "pago: eso va en otra sección.\n"
+    "Reglas: NO inventes precios ni fechas absolutas. No incluyas nada fuera del JSON."
 )
 
 
@@ -173,7 +198,7 @@ async def _generate_sections(precedent: str, request: str) -> _SectionsLLM:
         HumanMessage(
             content=(
                 f"PEDIDO DEL USUARIO:\n{request}\n\n"
-                f"PROPUESTA PRECEDENTE (usá como plantilla):\n{precedent}"
+                f"PROPUESTA(S) PRECEDENTE(S) (usá como plantilla):\n{precedent}"
             )
         ),
     ]
@@ -184,17 +209,46 @@ async def _generate_sections(precedent: str, request: str) -> _SectionsLLM:
     return _SectionsLLM.model_validate(_parse_json(content))
 
 
-async def build_proposal(*, precedent: str, request: str, fecha: str) -> ProposalDraft:
+async def _generate_sections_scratch(request: str) -> _SectionsLLM:
+    """Redacta las secciones narrativas SOLO desde el pedido (sin precedente)."""
+    llm = get_chat_llm(streaming=False, temperature=0.3, max_tokens=4096)
+    messages = [
+        SystemMessage(content=_SECTIONS_SCRATCH_SYSTEM),
+        HumanMessage(content=f"PEDIDO DEL USUARIO:\n{request}"),
+    ]
+    response = await llm.ainvoke(messages)
+    content = (
+        response.content if isinstance(response.content, str) else str(response.content)
+    )
+    return _SectionsLLM.model_validate(_parse_json(content))
+
+
+async def build_proposal(
+    *, precedent: str | None, request: str, fecha: str
+) -> ProposalDraft:
     """Arma la propuesta completa: boilerplate fijo + secciones LLM + económica.
 
     Corre en paralelo las dos llamadas al LLM (económica y secciones narrativas) y
-    ensambla todo en orden."""
-    economica, narr = await asyncio.gather(
-        draft_from_precedent(precedent, request),
-        _generate_sections(precedent, request),
-    )
+    ensambla todo en orden. Si ``precedent`` es vacío/None redacta DESDE CERO (solo a
+    partir del pedido); si no, usa el/los precedente(s) como plantilla."""
+    if precedent:
+        economica, narr = await asyncio.gather(
+            draft_from_precedent(precedent, request),
+            _generate_sections(precedent, request),
+        )
+    else:
+        economica, narr = await asyncio.gather(
+            draft_from_scratch(request),
+            _generate_sections_scratch(request),
+        )
+    # Limpiar etiquetas internas [PRECEDENTE n] que el LLM pueda haber filtrado.
+    for _f in ("objetivo", "alcances", "limitantes", "terminos"):
+        setattr(narr, _f, strip_precedent_labels(getattr(narr, _f)))
     # Quitar ítems "placeholder" que el LLM dejó con cantidad 0 (modelos no pedidos).
-    economica.items = [it for it in economica.items if (it.cantidad or 0) > 0]
+    # SOLO con precedente: en modo "desde cero" el esqueleto trae ítems con cantidad
+    # null a propósito (precios/cantidades para completar a mano) y no hay que borrarlos.
+    if precedent:
+        economica.items = [it for it in economica.items if (it.cantidad or 0) > 0]
     cliente = (economica.cliente or "").strip() or None
 
     secciones = [

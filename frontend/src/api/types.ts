@@ -76,6 +76,7 @@ export interface QuoteDraft {
   impuestos: number | null;
   total: number | null;
   vigencia: string | null;
+  valida_hasta: string | null;
   condiciones: string | null;
   notas: string | null;
   no_encontrado: string[];
@@ -110,6 +111,7 @@ export interface ProposalResult {
   title: string;
   proposal: ProposalDraft;
   based_on: BasedOn | null;
+  based_on_all?: BasedOn[] | null;
   citations: Citation[];
 }
 
@@ -145,5 +147,6 @@ export interface GuidedQuoteResult {
   title: string;
   quote: QuoteDraft;
   based_on: BasedOn | null;
+  based_on_all?: BasedOn[] | null;
   citations: Citation[];
 }

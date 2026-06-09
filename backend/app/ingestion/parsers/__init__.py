@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from app.ingestion.parsers import docx as docx_parser
+from app.ingestion.parsers import excel as excel_parser
 from app.ingestion.parsers import pdf as pdf_parser
 from app.ingestion.parsers import text as text_parser
 from app.ingestion.parsers.base import ParsedPage
@@ -15,6 +16,8 @@ _REGISTRY: dict[str, ParseFn] = {
     ".docx": docx_parser.parse,
     ".txt": text_parser.parse,
     ".md": text_parser.parse,
+    ".xlsx": excel_parser.parse_xlsx,
+    ".csv": excel_parser.parse_csv,
 }
 
 SUPPORTED_EXTENSIONS = frozenset(_REGISTRY)

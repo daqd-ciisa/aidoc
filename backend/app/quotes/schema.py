@@ -23,6 +23,9 @@ class QuoteDraft(BaseModel):
     impuestos: float | None = None
     total: float | None = None
     vigencia: str | None = None
+    # Fecha (ISO yyyy-mm-dd) hasta la que la cotización es válida. La fija el backend al
+    # generar (por defecto 30 días) y es editable; sirve para filtrar vigentes/vencidas.
+    valida_hasta: str | None = None
     condiciones: str | None = None
     notas: str | None = None
     no_encontrado: list[str] = Field(default_factory=list)

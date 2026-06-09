@@ -54,7 +54,7 @@ export default function ProposalPanel({
   proposal: ProposalDraft;
   quoteId: string;
   title: string;
-  basedOn?: BasedOn | null;
+  basedOn?: BasedOn[] | null;
   onClose: () => void;
   onSaved?: (updated: ProposalDraft) => void;
 }) {
@@ -160,7 +160,7 @@ export default function ProposalPanel({
     if (!updated) return;
     setDownloading(true);
     try {
-      await downloadQuotePdf(quoteId, title || "propuesta");
+      await downloadQuotePdf(quoteId, title || "cotizacion");
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
@@ -182,7 +182,7 @@ export default function ProposalPanel({
             </div>
             <div>
               <h2 className="text-base font-bold text-surface-900 dark:text-surface-50">
-                Propuesta completa
+                Cotización
               </h2>
               <p className="text-xs text-surface-400 dark:text-surface-500">
                 Editá las secciones y la económica, luego descargá el PDF
@@ -199,12 +199,16 @@ export default function ProposalPanel({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {basedOn && (
+          {basedOn && basedOn.length > 0 && (
             <div className="mb-4 flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-700 ring-1 ring-brand-100 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/20">
               <FileText className="h-4 w-4 shrink-0" />
               <span>
-                Generada usando como base:{" "}
-                <span className="font-semibold">{basedOn.filename}</span>
+                {basedOn.length > 1
+                  ? "Generada combinando: "
+                  : "Generada usando como base: "}
+                <span className="font-semibold">
+                  {basedOn.map((b) => b.filename).join(", ")}
+                </span>
               </span>
             </div>
           )}
@@ -244,6 +248,17 @@ export default function ProposalPanel({
                 value={econ.moneda ?? ""}
                 placeholder="MXN"
                 onChange={(e) => patchEcon({ moneda: e.target.value || null })}
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+                Válida hasta
+              </label>
+              <input
+                type="date"
+                className={`${inputCls} mt-1`}
+                value={econ.valida_hasta ?? ""}
+                onChange={(e) => patchEcon({ valida_hasta: e.target.value || null })}
               />
             </div>
           </div>

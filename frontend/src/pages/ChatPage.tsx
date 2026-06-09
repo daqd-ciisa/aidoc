@@ -72,7 +72,7 @@ export default function ChatPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [showDocPicker, setShowDocPicker] = useState(false);
   const [quote, setQuote] = useState<QuoteDraft | null>(null);
-  const [basedOn, setBasedOn] = useState<BasedOn | null>(null);
+  const [basedOn, setBasedOn] = useState<BasedOn[] | null>(null);
   const [quoteId, setQuoteId] = useState<string | null>(null);
   const [showGuided, setShowGuided] = useState(false);
   const [quoteBusy, setQuoteBusy] = useState(false);
@@ -81,7 +81,7 @@ export default function ChatPage() {
   const [proposalMeta, setProposalMeta] = useState<{
     quoteId: string;
     title: string;
-    basedOn: BasedOn | null;
+    basedOn: BasedOn[] | null;
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -336,12 +336,6 @@ export default function ChatPage() {
         <GuidedQuoteModal
           sessionId={sessionId}
           onClose={() => setShowGuided(false)}
-          onDrafted={(d, b, id) => {
-            setQuote(d);
-            setBasedOn(b);
-            setQuoteId(id);
-            setShowGuided(false);
-          }}
           onProposal={(p, b, id, title) => {
             setProposal(p);
             setProposalMeta({ quoteId: id, title, basedOn: b });

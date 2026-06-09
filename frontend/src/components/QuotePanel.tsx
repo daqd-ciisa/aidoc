@@ -37,6 +37,19 @@ function toNum(s: string): number | null {
 const inputCls =
   "w-full rounded-lg border border-surface-300 bg-white px-2.5 py-1.5 text-sm text-surface-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100 dark:border-surface-600 dark:bg-surface-900 dark:text-surface-100 dark:focus:border-brand-500 dark:focus:ring-brand-500/20";
 
+function fmtDateISO(iso: string | null): string | null {
+  if (!iso) return null;
+  try {
+    return new Date(`${iso}T00:00:00`).toLocaleDateString("es-MX", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 function Field({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
@@ -85,7 +98,7 @@ export default function QuotePanel({
 }: {
   draft: QuoteDraft;
   onClose: () => void;
-  basedOn?: BasedOn | null;
+  basedOn?: BasedOn[] | null;
   quoteId?: string | null;
   onSaved?: (updated: QuoteDraft) => void;
 }) {
@@ -222,12 +235,16 @@ export default function QuotePanel({
         </div>
 
         <div className="px-6 py-5">
-          {basedOn && (
+          {basedOn && basedOn.length > 0 && (
             <div className="mb-4 flex items-center gap-2 rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-700 ring-1 ring-brand-100 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/20">
               <FileText className="h-4 w-4 shrink-0" />
               <span>
-                Generada usando como base:{" "}
-                <span className="font-semibold">{basedOn.filename}</span>
+                {basedOn.length > 1
+                  ? "Generada combinando: "
+                  : "Generada usando como base: "}
+                <span className="font-semibold">
+                  {basedOn.map((b) => b.filename).join(", ")}
+                </span>
               </span>
             </div>
           )}
@@ -252,12 +269,26 @@ export default function QuotePanel({
                 placeholder="30 días"
                 onChange={(v) => setForm((f) => ({ ...f, vigencia: v || null }))}
               />
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-surface-400 dark:text-surface-500">
+                  Válida hasta
+                </label>
+                <input
+                  type="date"
+                  className={`${inputCls} mt-1`}
+                  value={form.valida_hasta ?? ""}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, valida_hasta: e.target.value || null }))
+                  }
+                />
+              </div>
             </div>
           ) : (
             <dl className="mb-5 grid grid-cols-3 gap-4 rounded-xl bg-surface-50 px-4 py-3 ring-1 ring-surface-200 dark:bg-surface-900/50 dark:ring-surface-700">
               <Field label="Cliente" value={draft.cliente} />
               <Field label="Moneda" value={draft.moneda} />
               <Field label="Vigencia" value={draft.vigencia} />
+              <Field label="Válida hasta" value={fmtDateISO(draft.valida_hasta)} />
             </dl>
           )}
 

@@ -35,7 +35,7 @@ export const findPrecedents = (request: string, topDocs?: number) =>
 
 export interface FromPrecedentBody {
   request: string;
-  document_id: string;
+  document_ids: string[];
   session_id?: string | null;
   title?: string | null;
 }
@@ -46,6 +46,22 @@ export const generateFromPrecedent = (body: FromPrecedentBody) =>
 /** Genera la PROPUESTA COMPLETA (todas las secciones) desde el precedente. */
 export const generateProposalFromPrecedent = (body: FromPrecedentBody) =>
   apiPost<ProposalResult>("/quotes/proposal-from-precedent", body);
+
+// ── Flujo sin precedente (desde cero) ─────────────────────────────────────────
+
+export interface FromScratchBody {
+  request: string;
+  session_id?: string | null;
+  title?: string | null;
+}
+
+/** Genera una cotización económica DESDE CERO (sin precedente ni documentos). */
+export const generateFromScratch = (body: FromScratchBody) =>
+  apiPost<GuidedQuoteResult>("/quotes/from-scratch", body);
+
+/** Genera la PROPUESTA COMPLETA DESDE CERO (sin precedente). */
+export const generateProposalFromScratch = (body: FromScratchBody) =>
+  apiPost<ProposalResult>("/quotes/proposal-from-scratch", body);
 
 /** Guarda los cambios de una propuesta completa editada a mano. */
 export const updateProposal = (

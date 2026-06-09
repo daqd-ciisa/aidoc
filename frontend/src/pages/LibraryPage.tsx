@@ -4,6 +4,7 @@ import {
   FileText,
   FileType2,
   FileCode2,
+  FileSpreadsheet,
   File as FileIcon,
   Cloud,
   HardDriveDownload,
@@ -28,7 +29,7 @@ import GoogleSettingsModal from "../components/GoogleSettingsModal";
 import OneDrivePickerModal from "../components/OneDrivePickerModal";
 import type { ImportResult } from "../api/connectors";
 
-const ACCEPT = ".pdf,.docx,.txt,.md";
+const ACCEPT = ".pdf,.docx,.txt,.md,.xlsx,.csv";
 
 function fmtSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -57,6 +58,11 @@ function iconFor(ext: string): { Icon: LucideIcon; tint: string } {
     return {
       Icon: FileText,
       tint: "bg-surface-100 text-surface-500 dark:bg-surface-800 dark:text-surface-400",
+    };
+  if (e === "xlsx" || e === "csv")
+    return {
+      Icon: FileSpreadsheet,
+      tint: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
     };
   return {
     Icon: FileIcon,
@@ -165,8 +171,8 @@ export default function LibraryPage() {
               Biblioteca
             </h1>
             <p className="mt-1 text-sm text-surface-500 dark:text-surface-400">
-              Subí PDF, DOCX, TXT o MD. Se indexan automáticamente para poder
-              consultarlos en el chat.
+              Subí PDF, DOCX, XLSX, CSV, TXT o MD. Se indexan automáticamente para
+              poder consultarlos en el chat.
             </p>
           </div>
           <div className="flex gap-2">
@@ -222,7 +228,7 @@ export default function LibraryPage() {
               : "Arrastrá archivos acá o hacé clic para seleccionar"}
           </p>
           <p className="mt-1 text-xs text-surface-400 dark:text-surface-500">
-            Formatos: PDF · DOCX · TXT · MD
+            Formatos: PDF · DOCX · XLSX · CSV · TXT · MD
           </p>
         </div>
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict
@@ -15,7 +15,11 @@ from app.api.deps import get_tenant_id
 from app.chat import rag
 from app.db.models.quote import Quote
 from app.db.session import get_db
-from app.quotes.extractor import draft_from_precedent, extract_quote
+from app.quotes.extractor import (
+    draft_from_precedent,
+    draft_from_scratch,
+    extract_quote,
+)
 from app.quotes.pdf import render_proposal_pdf, render_quote_pdf
 from app.quotes.proposal import ProposalDraft, build_proposal
 from app.quotes.schema import QuoteDraft
@@ -79,7 +83,18 @@ class PrecedentsResult(BaseModel):
 
 class FromPrecedentRequest(BaseModel):
     request: str
-    document_id: str
+    # Uno o varios precedentes. ``document_id`` se mantiene por compatibilidad;
+    # ``document_ids`` es el camino nuevo (multi-precedente).
+    document_id: str | None = None
+    document_ids: list[str] | None = None
+    session_id: str | None = None
+    title: str | None = None
+
+
+class FromScratchRequest(BaseModel):
+    """Generación SIN precedente (desde cero): solo el pedido en lenguaje natural."""
+
+    request: str
     session_id: str | None = None
     title: str | None = None
 
@@ -94,7 +109,8 @@ class GuidedQuoteResult(BaseModel):
     quote_id: str
     title: str
     quote: QuoteDraft
-    based_on: BasedOn | None
+    based_on: BasedOn | None  # precedente principal (el primero), por compatibilidad
+    based_on_all: list[BasedOn] | None = None  # todos los precedentes usados
     citations: list[dict]
 
 
@@ -108,17 +124,69 @@ def _fecha_es(dt: datetime) -> str:
     return f"{dt.day:02d} de {_MESES_ES[dt.month - 1]} de {dt.year}"
 
 
+DEFAULT_VIGENCIA_DIAS = 30
+
+
+def _default_valida_hasta() -> str:
+    """Fecha de validez por defecto (ISO yyyy-mm-dd): hoy + 30 días."""
+    return (datetime.now() + timedelta(days=DEFAULT_VIGENCIA_DIAS)).date().isoformat()
+
+
 class ProposalResult(BaseModel):
     quote_id: str
     title: str
     proposal: ProposalDraft
     based_on: BasedOn | None
+    based_on_all: list[BasedOn] | None = None
     citations: list[dict]
 
 
 class ProposalUpdate(BaseModel):
     title: str | None = None
     proposal: ProposalDraft
+
+
+_MAX_PRECEDENTS = 4  # tope razonable para no inflar el contexto del LLM
+
+
+def _precedent_ids(req: FromPrecedentRequest) -> list[str]:
+    """Normaliza el/los precedente(s) del request a una lista (dedup, sin vacíos, capada).
+
+    Acepta tanto ``document_ids`` (multi) como ``document_id`` (legacy)."""
+    raw = list(req.document_ids or [])
+    if req.document_id:
+        raw.append(req.document_id)
+    seen: set[str] = set()
+    out: list[str] = []
+    for doc_id in raw:
+        if doc_id and doc_id not in seen:
+            seen.add(doc_id)
+            out.append(doc_id)
+    return out[:_MAX_PRECEDENTS]
+
+
+async def _combine_precedents(
+    tenant_id: str, document_ids: list[str]
+) -> tuple[str, list[dict], list[BasedOn]]:
+    """Recupera uno o varios precedentes completos y los une en un solo contexto.
+
+    Cada documento se etiqueta como ``[PRECEDENTE n: archivo]`` para que el LLM pueda
+    distinguirlos. Devuelve ``(contexto_combinado, chunks, based_on)`` — los docs sin
+    contenido indexado se omiten silenciosamente."""
+    blocks: list[str] = []
+    all_chunks: list[dict] = []
+    based_on: list[BasedOn] = []
+    for doc_id in document_ids:
+        context, chunks = await asyncio.to_thread(
+            rag.full_document_context, tenant_id, doc_id
+        )
+        if not context:
+            continue
+        filename = chunks[0]["filename"] if chunks else "documento"
+        blocks.append(f"[PRECEDENTE {len(based_on) + 1}: {filename}]\n{context}")
+        all_chunks.extend(chunks)
+        based_on.append(BasedOn(document_id=doc_id, filename=filename))
+    return "\n\n".join(blocks), all_chunks, based_on
 
 
 @router.post("/precedents")
@@ -178,16 +246,18 @@ async def quote_from_precedent(
     db: AsyncSession = Depends(get_db),
     tenant_id: str = Depends(get_tenant_id),
 ) -> GuidedQuoteResult:
-    """Paso 2 del flujo guiado: genera la nueva cotización usando el precedente
-    elegido (documento completo) como plantilla."""
+    """Paso 2 del flujo guiado: genera la nueva cotización usando el/los precedente(s)
+    elegido(s) (documentos completos) como plantilla."""
     if not req.request.strip():
         raise HTTPException(status_code=422, detail="El pedido no puede estar vacío.")
 
-    # 1. Recuperar el documento precedente completo.
+    ids = _precedent_ids(req)
+    if not ids:
+        raise HTTPException(status_code=422, detail="Elegí al menos un precedente.")
+
+    # 1. Recuperar el/los documento(s) precedente(s) completo(s) y combinarlos.
     try:
-        context, chunks = await asyncio.to_thread(
-            rag.full_document_context, tenant_id, req.document_id
-        )
+        context, chunks, based_on = await _combine_precedents(tenant_id, ids)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Fallo recuperando el precedente")
         raise HTTPException(
@@ -200,9 +270,7 @@ async def quote_from_precedent(
             detail="El documento precedente no tiene contenido indexado.",
         )
 
-    filename = chunks[0]["filename"] if chunks else "documento"
-
-    # 2. Generar la nueva cotización guiada por el precedente.
+    # 2. Generar la nueva cotización guiada por el/los precedente(s).
     try:
         draft = await draft_from_precedent(context, req.request)
     except Exception as exc:  # noqa: BLE001
@@ -212,6 +280,7 @@ async def quote_from_precedent(
         ) from exc
 
     # 3. Persistir.
+    draft.valida_hasta = draft.valida_hasta or _default_valida_hasta()
     title = req.title or f"Cotización {draft.cliente or req.request[:40]}".strip()
     quote = Quote(
         id=str(uuid.uuid4()),
@@ -241,7 +310,8 @@ async def quote_from_precedent(
         quote_id=quote.id,
         title=quote.title,
         quote=draft,
-        based_on=BasedOn(document_id=req.document_id, filename=filename),
+        based_on=based_on[0] if based_on else None,
+        based_on_all=based_on,
         citations=citations,
     )
 
@@ -253,15 +323,17 @@ async def proposal_from_precedent(
     tenant_id: str = Depends(get_tenant_id),
 ) -> ProposalResult:
     """Genera una PROPUESTA COMPLETA (todas las secciones, no solo la económica)
-    usando el precedente elegido como plantilla."""
+    usando el/los precedente(s) elegido(s) como plantilla."""
     if not req.request.strip():
         raise HTTPException(status_code=422, detail="El pedido no puede estar vacío.")
 
-    # 1. Recuperar el documento precedente completo.
+    ids = _precedent_ids(req)
+    if not ids:
+        raise HTTPException(status_code=422, detail="Elegí al menos un precedente.")
+
+    # 1. Recuperar el/los documento(s) precedente(s) completo(s) y combinarlos.
     try:
-        context, chunks = await asyncio.to_thread(
-            rag.full_document_context, tenant_id, req.document_id
-        )
+        context, chunks, based_on = await _combine_precedents(tenant_id, ids)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Fallo recuperando el precedente")
         raise HTTPException(
@@ -273,8 +345,6 @@ async def proposal_from_precedent(
             status_code=404,
             detail="El documento precedente no tiene contenido indexado.",
         )
-
-    filename = chunks[0]["filename"] if chunks else "documento"
 
     # 2. Generar la propuesta completa (económica + secciones, en paralelo).
     try:
@@ -288,7 +358,10 @@ async def proposal_from_precedent(
         ) from exc
 
     # 3. Persistir (la propuesta completa vive en Quote.data con kind="proposal").
-    title = req.title or f"Propuesta {proposal.cliente or req.request[:40]}".strip()
+    proposal.economica.valida_hasta = (
+        proposal.economica.valida_hasta or _default_valida_hasta()
+    )
+    title = req.title or f"Cotización {proposal.cliente or req.request[:40]}".strip()
     quote = Quote(
         id=str(uuid.uuid4()),
         tenant_id=tenant_id,
@@ -317,8 +390,97 @@ async def proposal_from_precedent(
         quote_id=quote.id,
         title=quote.title,
         proposal=proposal,
-        based_on=BasedOn(document_id=req.document_id, filename=filename),
+        based_on=based_on[0] if based_on else None,
+        based_on_all=based_on,
         citations=citations,
+    )
+
+
+@router.post("/from-scratch")
+async def quote_from_scratch(
+    req: FromScratchRequest,
+    db: AsyncSession = Depends(get_db),
+    tenant_id: str = Depends(get_tenant_id),
+) -> GuidedQuoteResult:
+    """Genera una cotización económica DESDE CERO (sin precedente ni documentos): un
+    esqueleto de ítems desde el pedido, con precios en null para completar a mano."""
+    if not req.request.strip():
+        raise HTTPException(status_code=422, detail="El pedido no puede estar vacío.")
+
+    try:
+        draft = await draft_from_scratch(req.request)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Fallo generando cotización desde cero")
+        raise HTTPException(
+            status_code=502, detail=f"Generación falló: {exc}"
+        ) from exc
+
+    draft.valida_hasta = draft.valida_hasta or _default_valida_hasta()
+    title = req.title or f"Cotización {draft.cliente or req.request[:40]}".strip()
+    quote = Quote(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        session_id=req.session_id,
+        title=title,
+        data=draft.model_dump(),
+    )
+    db.add(quote)
+    await db.commit()
+    await db.refresh(quote)
+
+    return GuidedQuoteResult(
+        quote_id=quote.id,
+        title=quote.title,
+        quote=draft,
+        based_on=None,
+        based_on_all=[],
+        citations=[],
+    )
+
+
+@router.post("/proposal-from-scratch")
+async def proposal_from_scratch(
+    req: FromScratchRequest,
+    db: AsyncSession = Depends(get_db),
+    tenant_id: str = Depends(get_tenant_id),
+) -> ProposalResult:
+    """Genera una PROPUESTA COMPLETA DESDE CERO (sin precedente): boilerplate fijo de
+    CiiSA + secciones redactadas solo desde el pedido + económica esqueleto."""
+    if not req.request.strip():
+        raise HTTPException(status_code=422, detail="El pedido no puede estar vacío.")
+
+    try:
+        proposal = await build_proposal(
+            precedent=None, request=req.request, fecha=_fecha_es(datetime.now())
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Fallo generando propuesta desde cero")
+        raise HTTPException(
+            status_code=502, detail=f"Generación falló: {exc}"
+        ) from exc
+
+    proposal.economica.valida_hasta = (
+        proposal.economica.valida_hasta or _default_valida_hasta()
+    )
+    title = req.title or f"Cotización {proposal.cliente or req.request[:40]}".strip()
+    quote = Quote(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        session_id=req.session_id,
+        title=title,
+        data=proposal.model_dump(),
+    )
+    db.add(quote)
+    await db.commit()
+    await db.refresh(quote)
+
+    return ProposalResult(
+        quote_id=quote.id,
+        title=quote.title,
+        proposal=proposal,
+        based_on=None,
+        based_on_all=[],
+        citations=[],
     )
 
 
@@ -357,6 +519,7 @@ async def generate_quote(
         ) from exc
 
     # 3. Persistir el borrador.
+    draft.valida_hasta = draft.valida_hasta or _default_valida_hasta()
     title = req.title or f"Cotización {draft.cliente or ''}".strip()
     quote = Quote(
         id=str(uuid.uuid4()),

@@ -30,6 +30,7 @@ Pillow>=10,<12
 # ─── Ingesta (fases siguientes) ──
 pymupdf>=1.24,<2
 python-docx>=1.1,<2
+openpyxl>=3.1,<4                  # hojas de cálculo .xlsx (catálogos de servicios/productos)
 pypdf>=5.0,<6
 langchain-openai>=0.2,<0.3
 langchain-qdrant>=0.2,<0.3

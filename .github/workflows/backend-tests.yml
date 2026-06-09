@@ -1,0 +1,41 @@
+name: Backend tests (Capa 1)
+
+# E2E de "plumbing" de AIDOC: corre TODO el pipeline con LLM/embeddings falseados y
+# Qdrant/storage en memoria. No depende de PCAI (sin tokens ni red) → seguro en CI.
+# La Capa 2 (marker `pcai`) se excluye acá: requiere VPN + endpoints reales.
+
+on:
+  push:
+    branches: [main, poc]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-tests.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run Capa 1 (excluye PCAI)
+        run: pytest -m "not pcai" -v

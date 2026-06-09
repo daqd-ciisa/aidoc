@@ -1,0 +1,7 @@
+# Dependencias solo de desarrollo/tests (no se instalan en la imagen de producción).
+-r requirements.txt
+
+pytest>=8.3,<9
+pytest-asyncio>=0.24,<0.25
+aiosqlite>=0.20,<0.21        # backend SQLite async para los tests (DB efímera)
+# httpx ya está en requirements.txt (cliente ASGI de los tests E2E)

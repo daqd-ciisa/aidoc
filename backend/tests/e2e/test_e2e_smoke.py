@@ -9,6 +9,10 @@ modelo real vive en la Capa 2 (``test_e2e_pcai.py``, marcada ``pcai``).
 """
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.e2e
+
 DOC_TEXT = (
     "Cotización de servicios para el cliente ACME.\n"
     "Servicio: Soporte técnico mensual.\n"

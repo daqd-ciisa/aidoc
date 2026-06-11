@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field
 class QuoteItem(BaseModel):
     servicio: str
     descripcion: str | None = None
+    # Código de parte CiiSA (ej. "SRV26014"); va en la columna "No. Parte" del PDF.
+    no_parte: str | None = None
+    # Unidad de medida (ej. "Serv", "Pza"); columna "Uni." del PDF.
+    unidad: str | None = None
     cantidad: float | None = None
     precio_unitario: float | None = None
     importe: float | None = None
@@ -18,6 +22,10 @@ class QuoteDraft(BaseModel):
 
     cliente: str | None = None
     moneda: str | None = None
+    # Línea de servicio (ej. "Servicios Personal Systems"); banda verde de la tabla.
+    categoria: str | None = None
+    # Término de pago (ej. "50% al inicio / 50% al finalizar"); bloque de totales.
+    termino_pago: str | None = None
     items: list[QuoteItem] = Field(default_factory=list)
     subtotal: float | None = None
     impuestos: float | None = None

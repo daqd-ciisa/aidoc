@@ -63,6 +63,10 @@ export interface SessionDetail extends SessionRead {
 export interface QuoteItem {
   servicio: string;
   descripcion: string | null;
+  /** Código de parte CiiSA (ej. "SRV26014"); columna "No. Parte" del PDF. */
+  no_parte?: string | null;
+  /** Unidad de medida (ej. "Serv", "Pza"); columna "Uni." del PDF. */
+  unidad?: string | null;
   cantidad: number | null;
   precio_unitario: number | null;
   importe: number | null;
@@ -71,6 +75,10 @@ export interface QuoteItem {
 export interface QuoteDraft {
   cliente: string | null;
   moneda: string | null;
+  /** Línea de servicio (ej. "Servicios Personal Systems"); banda verde de la tabla. */
+  categoria?: string | null;
+  /** Término de pago (ej. "50% al inicio / 50% al finalizar"). */
+  termino_pago?: string | null;
   items: QuoteItem[];
   subtotal: number | null;
   impuestos: number | null;

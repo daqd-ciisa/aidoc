@@ -15,7 +15,6 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
     HRFlowable,
-    Image as RLImage,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -26,16 +25,28 @@ from reportlab.platypus import (
 
 from app.quotes.schema import QuoteDraft
 
-_LOGO_WHITE = os.path.join(os.path.dirname(__file__), "assets", "ciisa_logo_white.png")
+_ASSETS = os.path.join(os.path.dirname(__file__), "assets")
+_LOGO_WHITE = os.path.join(_ASSETS, "ciisa_logo_white.png")  # lockup blanco (fondo navy)
+_MARK = os.path.join(_ASSETS, "ciisa_mark.png")  # motivo color: C degradada + acentos (680x470)
+_ISOTIPO = os.path.join(_ASSETS, "ciisa_isotipo.png")  # isotipo chico para pie (232x160)
+_QR = os.path.join(_ASSETS, "ciisa_qr.png")  # QR de la banda de pie de la portada
 _CONTACT = "ciisa.com   ·   México - Colombia   ·   soporte@ciisa.com   ·   (81) 1257-8000"
 
-# Paleta alineada a CIISA: navy dominante (#012045) + neutros fríos.
-BRAND = colors.HexColor("#012045")
+# Paleta CiiSA real (theme1.xml de las propuestas de muestra): navy #001C71 dominante,
+# indigo #332CC4 (banda de portada / header de tabla), lima #BFF500 (banda de categoría),
+# cyan #08A7FF (franja divisoria / fechas) y gris #E7E6E6 (bloque de totales).
+BRAND = colors.HexColor("#001C71")
+INDIGO = colors.HexColor("#332CC4")
+LIME = colors.HexColor("#BFF500")
+CYAN = colors.HexColor("#08A7FF")
+TOTALS_BG = colors.HexColor("#E7E6E6")
 BRAND_LIGHT = colors.HexColor("#eaeef4")
 INK = colors.HexColor("#1c1917")
 MUTED = colors.HexColor("#6b7280")
 BORDER = colors.HexColor("#e2e7ef")
 ROW_ALT = colors.HexColor("#f6f8fb")
+
+_RAZON_SOCIAL = "CONSULTORIA INTEGRAL DE INFORMATICA S.A.P.I. DE CV"
 
 _PS = ParagraphStyle
 
@@ -44,7 +55,8 @@ def _money(v: float | None, cur: str | None) -> str:
     if v is None:
         return "—"
     s = f"{v:,.2f}"
-    return f"{cur} {s}" if cur else s
+    # Sin moneda explícita usamos "$" como las propuestas CiiSA (la moneda va aparte).
+    return f"{cur} {s}" if cur else f"${s}"
 
 
 def _styles() -> dict[str, ParagraphStyle]:
@@ -62,13 +74,44 @@ def _styles() -> dict[str, ParagraphStyle]:
         "cellr": _PS(
             "cellr", fontName="Helvetica", fontSize=9.5, textColor=INK, alignment=TA_RIGHT
         ),
+        "cellrb": _PS(
+            "cellrb",
+            fontName="Helvetica-Bold",
+            fontSize=9.5,
+            textColor=INK,
+            alignment=TA_RIGHT,
+        ),
         "th": _PS("th", fontName="Helvetica-Bold", fontSize=8, textColor=colors.white),
+        "thc": _PS(
+            "thc",
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            textColor=colors.white,
+            alignment=TA_CENTER,
+        ),
         "thr": _PS(
             "thr",
             fontName="Helvetica-Bold",
             fontSize=8,
             textColor=colors.white,
             alignment=TA_RIGHT,
+        ),
+        "cellc": _PS(
+            "cellc", fontName="Helvetica", fontSize=9.5, textColor=INK, alignment=TA_CENTER
+        ),
+        "parte": _PS(
+            "parte",
+            fontName="Helvetica-Bold",
+            fontSize=9,
+            textColor=INDIGO,
+            alignment=TA_CENTER,
+        ),
+        "band": _PS(
+            "band",
+            fontName="Helvetica-Bold",
+            fontSize=10,
+            textColor=BRAND,
+            alignment=TA_CENTER,
         ),
         "sect": _PS(
             "sect", fontName="Helvetica-Bold", fontSize=9, textColor=BRAND, spaceAfter=3
@@ -78,14 +121,18 @@ def _styles() -> dict[str, ParagraphStyle]:
 
 
 def _footer(canvas, doc) -> None:
+    """Pie como las propuestas CiiSA reales: isotipo abajo a la izquierda y
+    "Página N" navy bold cursiva a la derecha (sin línea ni texto extra)."""
     canvas.saveState()
-    canvas.setFont("Helvetica", 7.5)
-    canvas.setFillColor(MUTED)
     w, _ = A4
-    canvas.drawString(2 * cm, 1.1 * cm, "Generado con AIDOC")
-    canvas.drawRightString(w - 2 * cm, 1.1 * cm, f"Página {doc.page}")
-    canvas.setStrokeColor(BORDER)
-    canvas.line(2 * cm, 1.45 * cm, w - 2 * cm, 1.45 * cm)
+    iso_w = 1.15 * cm
+    canvas.drawImage(
+        _ISOTIPO, 1.4 * cm, 0.75 * cm,
+        width=iso_w, height=iso_w * 160.0 / 232.0, mask="auto",
+    )
+    canvas.setFont("Helvetica-BoldOblique", 8)
+    canvas.setFillColor(BRAND)
+    canvas.drawRightString(w - 1.6 * cm, 0.95 * cm, f"Página {doc.page}")
     canvas.restoreState()
 
 
@@ -106,7 +153,6 @@ def render_quote_pdf(
         title=title or "Cotización",
     )
     s = _styles()
-    cur = draft.moneda
     usable = A4[0] - 4 * cm  # ancho útil (≈17cm)
     story: list = []
 
@@ -172,82 +218,8 @@ def render_quote_pdf(
     story.append(meta)
     story.append(Spacer(1, 18))
 
-    # ── Tabla de ítems ──
-    data: list = [
-        [
-            Paragraph("SERVICIO", s["th"]),
-            Paragraph("CANT.", s["thr"]),
-            Paragraph("P. UNIT.", s["thr"]),
-            Paragraph("IMPORTE", s["thr"]),
-        ]
-    ]
-    for it in draft.items:
-        svc = Paragraph(it.servicio or "—", s["svc"])
-        if it.descripcion:
-            svc = [svc, Paragraph(it.descripcion, s["desc"])]
-        cant = "—" if it.cantidad is None else f"{it.cantidad:g}"
-        data.append(
-            [
-                svc,
-                Paragraph(cant, s["cellr"]),
-                Paragraph(_money(it.precio_unitario, None), s["cellr"]),
-                Paragraph(_money(it.importe, None), s["cellr"]),
-            ]
-        )
-    if not draft.items:
-        data.append([Paragraph("Sin ítems.", s["desc"]), "", "", ""])
-
-    items = Table(
-        data,
-        colWidths=[usable * 0.52, usable * 0.13, usable * 0.175, usable * 0.175],
-        repeatRows=1,
-    )
-    items.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), BRAND),
-                ("TOPPADDING", (0, 0), (-1, 0), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, ROW_ALT]),
-                ("LINEBELOW", (0, 1), (-1, -1), 0.5, BORDER),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 1), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
-            ]
-        )
-    )
-    story.append(items)
-    story.append(Spacer(1, 12))
-
-    # ── Totales (alineados a la derecha) ──
-    totals = Table(
-        [
-            ["Subtotal", _money(draft.subtotal, cur)],
-            ["Impuestos", _money(draft.impuestos, cur)],
-            ["TOTAL", _money(draft.total, cur)],
-        ],
-        colWidths=[usable * 0.18, usable * 0.22],
-        hAlign="RIGHT",
-    )
-    totals.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, 1), "Helvetica"),
-                ("FONTNAME", (0, 2), (-1, 2), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 1), 9.5),
-                ("FONTSIZE", (0, 2), (-1, 2), 12),
-                ("TEXTCOLOR", (0, 0), (0, 1), MUTED),
-                ("TEXTCOLOR", (0, 2), (-1, 2), BRAND),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("LINEABOVE", (0, 2), (-1, 2), 1, BRAND),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ]
-        )
-    )
-    story.append(totals)
+    # ── Tabla económica (formato CiiSA, compartida con la propuesta completa) ──
+    story.extend(_econ_flowables(draft, s, usable))
 
     # ── Condiciones / notas ──
     if draft.condiciones:
@@ -289,89 +261,181 @@ def _content_flowables(text: str, s: dict) -> list:
 
 
 def _econ_flowables(draft: QuoteDraft, s: dict, usable: float) -> list:
-    """Tabla de ítems + totales de la cotización económica (reutilizable)."""
-    cur = draft.moneda
-    data: list = [
-        [
-            Paragraph("SERVICIO", s["th"]),
-            Paragraph("CANT.", s["thr"]),
-            Paragraph("P. UNIT.", s["thr"]),
-            Paragraph("IMPORTE", s["thr"]),
-        ]
+    """Tabla económica al estilo de las propuestas CiiSA reales: header indigo con
+    columnas Ítem/No. Parte/Concepto/Uni./Cant./Precio Unitario/Precio Total, banda
+    lima con la categoría de servicio, franja cyan y bloque de totales gris
+    (SubTotal/IVA/Total Neto) con Término de Pago/Validez/Moneda a la izquierda.
+
+    Las columnas No. Parte y Uni. solo se muestran si algún ítem trae el dato."""
+    has_parte = any(it.no_parte for it in draft.items)
+    has_uni = any(it.unidad for it in draft.items)
+
+    # (título, fracción de ancho, estilo header, estilo celda) — Concepto absorbe
+    # el ancho de las columnas opcionales ausentes.
+    cols = [("Ítem", 0.08, "thc")]
+    if has_parte:
+        cols.append(("No. Parte", 0.14, "thc"))
+    concepto_idx = len(cols)
+    cols.append(("Concepto", 0.0, "thc"))
+    if has_uni:
+        cols.append(("Uni.", 0.08, "thc"))
+    cols.append(("Cant.", 0.09, "thc"))
+    cols.append(("Precio Unitario", 0.15, "thc"))
+    cols.append(("Precio Total", 0.15, "thc"))
+    concepto_w = 1.0 - sum(w for _, w, _ in cols)
+    widths = [usable * (w or concepto_w) for _, w, _ in cols]
+    ncols = len(cols)
+
+    data: list = [[Paragraph(t, s[st]) for t, _, st in cols]]
+    styles: list = [
+        ("BACKGROUND", (0, 0), (-1, 0), INDIGO),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        # Padding chico: las columnas angostas (Ítem/Uni./Cant.) no deben quebrar texto.
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 1), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 7),
     ]
-    for it in draft.items:
+
+    # Banda lima con la categoría de servicio, solo sobre la columna Concepto
+    # (como en las propuestas reales, donde no cubre todo el ancho de la tabla).
+    if draft.categoria:
+        row = [""] * ncols
+        row[concepto_idx] = Paragraph(_esc(draft.categoria), s["band"])
+        data.append(row)
+        band_y = len(data) - 1
+        styles += [
+            ("BACKGROUND", (concepto_idx, band_y), (concepto_idx, band_y), LIME),
+            ("TOPPADDING", (0, band_y), (-1, band_y), 4),
+            ("BOTTOMPADDING", (0, band_y), (-1, band_y), 4),
+        ]
+
+    for n, it in enumerate(draft.items, start=1):
         svc = Paragraph(_esc(it.servicio or "—"), s["svc"])
         if it.descripcion:
             svc = [svc, Paragraph(_esc(it.descripcion), s["desc"])]
         cant = "—" if it.cantidad is None else f"{it.cantidad:g}"
-        data.append(
-            [
-                svc,
-                Paragraph(cant, s["cellr"]),
-                Paragraph(_money(it.precio_unitario, None), s["cellr"]),
-                Paragraph(_money(it.importe, None), s["cellr"]),
-            ]
-        )
+        row = [Paragraph(str(n), s["parte"])]
+        if has_parte:
+            row.append(Paragraph(_esc(it.no_parte or ""), s["parte"]))
+        row.append(svc)
+        if has_uni:
+            row.append(Paragraph(_esc(it.unidad or ""), s["cellc"]))
+        row += [
+            Paragraph(cant, s["cellc"]),
+            # Precio unitario en bold, como en la tabla CiiSA real.
+            Paragraph(_money(it.precio_unitario, None), s["cellrb"]),
+            Paragraph(_money(it.importe, None), s["cellr"]),
+        ]
+        data.append(row)
     if not draft.items:
-        data.append([Paragraph("Sin ítems.", s["desc"]), "", "", ""])
-    items = Table(
-        data,
-        colWidths=[usable * 0.52, usable * 0.13, usable * 0.175, usable * 0.175],
-        repeatRows=1,
-    )
-    items.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), BRAND),
-                ("TOPPADDING", (0, 0), (-1, 0), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, ROW_ALT]),
-                ("LINEBELOW", (0, 1), (-1, -1), 0.5, BORDER),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                ("TOPPADDING", (0, 1), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
-            ]
-        )
-    )
-    totals = Table(
+        data.append([Paragraph("Sin ítems.", s["desc"])] + [""] * (ncols - 1))
+
+    items = Table(data, colWidths=widths, repeatRows=1)
+    items.setStyle(TableStyle(styles))
+
+    # Franja divisoria cyan (firma visual de la tabla CiiSA real).
+    stripe = Table([[""]], colWidths=[usable], rowHeights=[5])
+    stripe.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), CYAN)]))
+
+    # Bloque resumen: acento navy + Término de Pago/Validez/Moneda + totales en gris.
+    def _sl(text: str) -> Paragraph:  # etiqueta del bloque izquierdo
+        return Paragraph(f"<b>{text}</b>", s["desc"])
+
+    def _sv(text: str | None) -> Paragraph:  # valor del bloque izquierdo
+        return Paragraph(_esc(text or "—"), s["desc"])
+
+    accent_w = 0.5 * cm
+    left_w, lval_w, tot_l, tot_v = 3.2 * cm, 5.0 * cm, 3.0 * cm, 3.4 * cm
+    filler_w = usable - accent_w - left_w - lval_w - tot_l - tot_v
+    summary = Table(
         [
-            ["Subtotal", _money(draft.subtotal, cur)],
-            ["Impuestos", _money(draft.impuestos, cur)],
-            ["TOTAL", _money(draft.total, cur)],
+            ["", _sl("Término de Pago:"), _sv(draft.termino_pago), "", "SubTotal", _money(draft.subtotal, None)],
+            ["", _sl("Validez:"), _sv(draft.vigencia), "", "IVA", _money(draft.impuestos, None)],
+            ["", _sl("Moneda:"), _sv(draft.moneda), "", "Total Neto", _money(draft.total, None)],
         ],
-        colWidths=[usable * 0.18, usable * 0.22],
-        hAlign="RIGHT",
+        colWidths=[accent_w, left_w, lval_w, filler_w, tot_l, tot_v],
     )
-    totals.setStyle(
+    summary.setStyle(
         TableStyle(
             [
-                ("FONTNAME", (0, 0), (-1, 1), "Helvetica"),
-                ("FONTNAME", (0, 2), (-1, 2), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, 1), 9.5),
-                ("FONTSIZE", (0, 2), (-1, 2), 12),
-                ("TEXTCOLOR", (0, 0), (0, 1), MUTED),
-                ("TEXTCOLOR", (0, 2), (-1, 2), BRAND),
-                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
-                ("LINEABOVE", (0, 2), (-1, 2), 1, BRAND),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("BACKGROUND", (0, 0), (0, -1), INDIGO),
+                ("BACKGROUND", (4, 0), (-1, -1), TOTALS_BG),
+                ("FONTNAME", (4, 0), (-1, 1), "Helvetica"),
+                ("FONTNAME", (4, 2), (-1, 2), "Helvetica-Bold"),
+                ("FONTSIZE", (4, 0), (-1, -1), 9),
+                ("TEXTCOLOR", (4, 0), (-1, -1), INK),
+                ("ALIGN", (4, 0), (-1, -1), "RIGHT"),
+                ("LINEABOVE", (4, 2), (-1, 2), 1, BRAND),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
             ]
         )
     )
-    return [items, Spacer(1, 10), totals]
+    return [items, Spacer(1, 4), stripe, Spacer(1, 8), summary]
 
 
-def _proposal_footer(canvas, doc) -> None:
+# Las páginas interiores de la propuesta usan el mismo pie que la cotización.
+_proposal_footer = _footer
+
+
+def _cover_bg(canvas, doc) -> None:
+    """Fondo de la portada estilo CiiSA: página navy completa, banda indigo con el
+    nombre del formato, logo blanco arriba a la derecha, motivo geométrico del logo
+    (arco "C" + círculo cyan + cuadrado lima) y banda blanca de pie con la razón
+    social y el contacto. El título/cliente/fecha van como flowables encima."""
     canvas.saveState()
-    w, _ = A4
-    canvas.setStrokeColor(BORDER)
-    canvas.line(2 * cm, 1.45 * cm, w - 2 * cm, 1.45 * cm)
-    canvas.setFont("Helvetica", 7)
+    w, h = A4
+    canvas.setFillColor(BRAND)
+    canvas.rect(0, 0, w, h, stroke=0, fill=1)
+    # Banda indigo superior izquierda con el nombre del formato.
+    canvas.setFillColor(INDIGO)
+    canvas.rect(0, h - 4.3 * cm, w * 0.54, 2.5 * cm, stroke=0, fill=1)
+    canvas.setFillColor(colors.white)
+    canvas.setFont("Helvetica-Bold", 15)
+    canvas.drawString(1.3 * cm, h - 2.95 * cm, "Propuesta Técnica y")
+    canvas.drawString(1.3 * cm, h - 3.65 * cm, "Económica de Servicios")
+    # Logo blanco arriba a la derecha.
+    logo_w = 5.4 * cm
+    canvas.drawImage(
+        _LOGO_WHITE,
+        w - logo_w - 1.4 * cm,
+        h - 3.6 * cm,
+        width=logo_w,
+        height=logo_w * 97.0 / 674.0,
+        mask="auto",
+    )
+    # Motivo del isotipo real (C degradada + círculo cyan + cuadrado lima),
+    # sangrado al borde izquierdo y ocupando la mayor parte de la página,
+    # como en las propuestas de muestra.
+    motif_w = 23.5 * cm
+    canvas.drawImage(
+        _MARK,
+        -4.8 * cm,
+        h * 0.20,
+        width=motif_w,
+        height=motif_w * 470.0 / 680.0,  # ≈16.2cm de alto
+        mask="auto",
+    )
+    # Banda blanca de pie con la razón social, el contacto y el QR.
+    canvas.setFillColor(colors.white)
+    canvas.rect(0, 0, w, 2.6 * cm, stroke=0, fill=1)
+    canvas.setFillColor(BRAND)
+    canvas.setFont("Helvetica-Bold", 9)
+    canvas.drawString(1.4 * cm, 1.65 * cm, _RAZON_SOCIAL)
+    canvas.setFont("Helvetica", 8)
     canvas.setFillColor(MUTED)
-    canvas.drawString(2 * cm, 1.1 * cm, _CONTACT)
-    canvas.drawRightString(w - 2 * cm, 1.1 * cm, f"Página {doc.page}")
+    canvas.drawString(1.4 * cm, 1.05 * cm, _CONTACT)
+    qr_s = 1.8 * cm
+    canvas.drawImage(
+        _QR, w - qr_s - 1.4 * cm, (2.6 * cm - qr_s) / 2, width=qr_s, height=qr_s,
+        mask="auto",
+    )
     canvas.restoreState()
 
 
@@ -395,38 +459,25 @@ def render_proposal_pdf(proposal, title: str) -> bytes:
         leftIndent=14, bulletIndent=4, spaceAfter=3,
     )
     s["coverTitle"] = _PS(
-        "coverTitle", fontName="Helvetica-Bold", fontSize=26, textColor=BRAND,
-        leading=30, alignment=TA_CENTER,
+        "coverTitle", fontName="Helvetica-Bold", fontSize=21, textColor=colors.white,
+        leading=26, alignment=TA_LEFT,
     )
-    s["coverSub"] = _PS("coverSub", fontName="Helvetica", fontSize=12, textColor=MUTED, alignment=TA_CENTER)
+    s["coverDate"] = _PS(
+        "coverDate", fontName="Helvetica", fontSize=12, textColor=CYAN,
+        alignment=TA_RIGHT,
+    )
     usable = A4[0] - 4 * cm
     story: list = []
 
-    # ── Portada ──
-    logo_w = 9 * cm
-    logo = RLImage(_LOGO_WHITE, width=logo_w, height=logo_w * 97.0 / 674.0)
-    band = Table([[logo]], colWidths=[usable])
-    band.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, -1), BRAND),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 26),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 26),
-            ]
-        )
-    )
-    story.append(Spacer(1, 40))
-    story.append(band)
-    story.append(Spacer(1, 70))
-    story.append(Paragraph("Propuesta Técnica y<br/>Económica de Servicios", s["coverTitle"]))
-    story.append(Spacer(1, 26))
+    # ── Portada (el fondo navy/banda/logo lo pinta _cover_bg en el canvas) ──
+    cover_title = _esc(title or "Propuesta")
     if proposal.cliente:
-        story.append(Paragraph(f"Preparada para: <b>{_esc(proposal.cliente)}</b>", s["coverSub"]))
-        story.append(Spacer(1, 6))
+        cover_title = f"{_esc(proposal.cliente)}: {cover_title}"
+    story.append(Spacer(1, 4 * cm))
+    story.append(Paragraph(cover_title, s["coverTitle"]))
+    story.append(Spacer(1, 16.5 * cm))
     if proposal.fecha:
-        story.append(Paragraph(_esc(proposal.fecha), s["coverSub"]))
+        story.append(Paragraph(_esc(proposal.fecha), s["coverDate"]))
     story.append(PageBreak())
 
     # ── Secciones ──
@@ -439,5 +490,5 @@ def render_proposal_pdf(proposal, title: str) -> bytes:
             story.extend(_content_flowables(sec.contenido, s))
         story.append(Spacer(1, 16))
 
-    doc.build(story, onFirstPage=_proposal_footer, onLaterPages=_proposal_footer)
+    doc.build(story, onFirstPage=_cover_bg, onLaterPages=_proposal_footer)
     return buf.getvalue()

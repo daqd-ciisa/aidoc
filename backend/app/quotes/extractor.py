@@ -15,7 +15,9 @@ EXTRACTION_SYSTEM = (
     "cotización.\n"
     "Devolvé ÚNICAMENTE un objeto JSON válido con EXACTAMENTE estas claves:\n"
     '{"cliente": string|null, "moneda": string|null, '
+    '"categoria": string|null, "termino_pago": string|null, '
     '"items": [{"servicio": string, "descripcion": string|null, '
+    '"no_parte": string|null, "unidad": string|null, '
     '"cantidad": number|null, "precio_unitario": number|null, '
     '"importe": number|null}], '
     '"subtotal": number|null, "impuestos": number|null, "total": number|null, '
@@ -23,6 +25,10 @@ EXTRACTION_SYSTEM = (
     '"no_encontrado": [string]}\n'
     "Reglas:\n"
     "- Basate SOLO en el contexto. No inventes precios ni datos.\n"
+    '- "categoria" es la línea de servicio (ej. "Servicios Personal Systems"); '
+    '"no_parte" el código de parte (ej. "SRV26014"); "unidad" la unidad de medida '
+    '(ej. "Serv", "Pza"); "termino_pago" la forma de pago (ej. "50% al inicio / 50% '
+    'al finalizar"). Si no están en el contexto, dejalos en null.\n'
     "- Si un dato no está en el contexto, ponelo en null y agregá su nombre a "
     '"no_encontrado".\n'
     "- No incluyas ningún texto fuera del JSON."
@@ -39,6 +45,8 @@ GUIDED_SYSTEM = (
     "y completá ítems, precios o datos que falten tomándolos de los otros.\n"
     "- Reutilizá la estructura, los ítems, precios, moneda y condiciones de los "
     "precedentes cuando apliquen al nuevo pedido.\n"
+    "- Reutilizá también no_parte, unidad, categoria y termino_pago de los precedentes "
+    "cuando el ítem/servicio sea el mismo; NO inventes códigos de parte nuevos.\n"
     "- Ajustá cantidades, servicios y cliente según el PEDIDO del usuario.\n"
     "- Si hay CONFLICTO entre precedentes (p. ej. distinta moneda o precios distintos "
     "para lo mismo), priorizá el PRIMER precedente y aclaralo en \"notas\".\n"
@@ -50,7 +58,9 @@ GUIDED_SYSTEM = (
     "los documentos por su contenido o nombre.\n"
     "Devolvé ÚNICAMENTE un objeto JSON válido con EXACTAMENTE estas claves:\n"
     '{"cliente": string|null, "moneda": string|null, '
+    '"categoria": string|null, "termino_pago": string|null, '
     '"items": [{"servicio": string, "descripcion": string|null, '
+    '"no_parte": string|null, "unidad": string|null, '
     '"cantidad": number|null, "precio_unitario": number|null, '
     '"importe": number|null}], '
     '"subtotal": number|null, "impuestos": number|null, "total": number|null, '
@@ -70,10 +80,14 @@ SCRATCH_SYSTEM = (
     "- NO inventes precios: precio_unitario e importe SIEMPRE en null, y agregá cada "
     'ítem sin precio a "no_encontrado".\n'
     "- Dejá subtotal/impuestos/total en null (se completan al cargar los precios).\n"
+    "- Dejá no_parte, categoria y termino_pago en null (se completan después); "
+    '"unidad" podés inferirla del tipo de ítem (ej. "Serv" o "Pza").\n'
     '- En "notas" aclará que es un borrador desde cero, para completar manualmente.\n'
     "Devolvé ÚNICAMENTE un objeto JSON válido con EXACTAMENTE estas claves:\n"
     '{"cliente": string|null, "moneda": string|null, '
+    '"categoria": string|null, "termino_pago": string|null, '
     '"items": [{"servicio": string, "descripcion": string|null, '
+    '"no_parte": string|null, "unidad": string|null, '
     '"cantidad": number|null, "precio_unitario": number|null, '
     '"importe": number|null}], '
     '"subtotal": number|null, "impuestos": number|null, "total": number|null, '

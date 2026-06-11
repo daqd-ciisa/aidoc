@@ -11,7 +11,7 @@ image:
   namespace: axeljuarez          # usuario de Docker Hub
   backendRepo: aidoc-backend     # imagen usada por backend Y worker
   frontendRepo: aidoc-frontend   # imagen nginx + build de la SPA
-  tag: "0.1.0"
+  tag: "0.2.0"
   pullPolicy: IfNotPresent
 
 # Para repos privados: kubectl create secret docker-registry dockerhub-cred ...
@@ -74,11 +74,16 @@ config:
   verifySsl: false
   corsOrigins: "[]"   # mismo origen (nginx proxya /api) -> no hace falta CORS
 
-# ── Secretos (tokens PCAI + API keys). Sobreescribir en prod. ───────────────────
+# ── Secretos (tokens PCAI + API keys + auth). Sobreescribir en prod. ────────────
 secrets:
   llmApiKey: ""          # JWT del endpoint LLM de PCAI (vence ~2026-06-30)
   embeddingsApiKey: ""   # JWT del endpoint de embeddings de PCAI
   qdrantApiKey: ""       # vacío: PCAI despliega Qdrant con apiKey:false
+  # Auth de AIDOC (obligatorios desde 0.2.0: sin esto la app arranca pero
+  # nadie puede iniciar sesión).
+  appSecretKey: ""       # firma de JWT propios (mín. 32 chars aleatorios)
+  superadminEmail: ""    # se crea al arrancar; ⚠️ dominio real (EmailStr rechaza .local)
+  superadminPassword: ""
 
 # ── Exposición vía Istio (patrón PCAI / EzUA) ───────────────────────────────────
 ezua:

@@ -29,3 +29,6 @@ stringData:
   QDRANT_API_KEY: {{ .Values.secrets.qdrantApiKey | quote }}
   LLM_API_KEY: {{ .Values.secrets.llmApiKey | quote }}
   EMBEDDINGS_API_KEY: {{ .Values.secrets.embeddingsApiKey | quote }}
+  SECRET_KEY: {{ .Values.secrets.appSecretKey | quote }}
+  SUPERADMIN_EMAIL: {{ .Values.secrets.superadminEmail | quote }}
+  SUPERADMIN_PASSWORD: {{ .Values.secrets.superadminPassword | quote }}

@@ -11,6 +11,8 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}-worker
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum }}
     spec:
       {{- include "aidoc.imagePullSecrets" . | nindent 6 }}
       initContainers:

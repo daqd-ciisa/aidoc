@@ -11,6 +11,10 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}-backend
+      annotations:
+        # Fuerza el rollout de los pods cuando cambian config/secrets (si no,
+        # un update solo-de-values deja los pods con el entorno viejo).
+        checksum/config: {{ include (print $.Template.BasePath "/config.yaml") . | sha256sum }}
     spec:
       {{- include "aidoc.imagePullSecrets" . | nindent 6 }}
       initContainers:

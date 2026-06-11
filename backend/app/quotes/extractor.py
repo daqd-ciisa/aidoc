@@ -35,6 +35,23 @@ EXTRACTION_SYSTEM = (
 )
 
 
+# Reglas extra que se suman al system prompt SOLO cuando hay catálogo disponible.
+# El catálogo es la fuente canónica de números de parte y tarifas: pisa la regla
+# de "no inventar" para los datos que SÍ están en él.
+CATALOG_RULES = (
+    "\nAdemás te paso un bloque [CATÁLOGO DE SERVICIOS] con el catálogo/tarifario "
+    "oficial. Reglas del catálogo:\n"
+    "- El catálogo es la fuente CANÓNICA de no_parte, unidad y categoria: si un ítem "
+    "del pedido coincide con un servicio del catálogo, usá SUS valores (aunque el "
+    "precedente o contexto traiga otros).\n"
+    "- Si el catálogo trae precio para ese servicio, usalo como precio_unitario y "
+    "recalculá importes/subtotal/total.\n"
+    "- NO copies al resultado servicios del catálogo que el usuario no pidió.\n"
+    "- Lo que no esté en el catálogo sigue las reglas anteriores (null + "
+    '"no_encontrado"; nunca inventes códigos ni precios).'
+)
+
+
 GUIDED_SYSTEM = (
     "Eres un asistente experto en cotizaciones de servicios.\n"
     "El usuario necesita una NUEVA cotización. Te paso UNA O VARIAS cotizaciones "
@@ -126,15 +143,24 @@ def _parse_json(raw: str) -> dict:
         raise
 
 
-async def extract_quote(context: str, instruction: str) -> QuoteDraft:
+def _with_catalog(system: str, body: str, catalog: str | None) -> tuple[str, str]:
+    """Suma las reglas del catálogo al system y el bloque al mensaje, si hay catálogo."""
+    if not catalog:
+        return system, body
+    return system + CATALOG_RULES, f"{body}\n\n{catalog}"
+
+
+async def extract_quote(
+    context: str, instruction: str, catalog: str | None = None
+) -> QuoteDraft:
     """Llama al LLM (no streaming) y devuelve la cotización validada."""
     # max_tokens amplio: el JSON de una cotización completa supera fácil los
     # 1024 del default y se truncaría a mitad (JSON inválido).
     llm = get_chat_llm(streaming=False, temperature=0.0, max_tokens=4096)
-    messages = [
-        SystemMessage(content=EXTRACTION_SYSTEM),
-        HumanMessage(content=f"{instruction}\n\nCONTEXTO:\n{context}"),
-    ]
+    system, body = _with_catalog(
+        EXTRACTION_SYSTEM, f"{instruction}\n\nCONTEXTO:\n{context}", catalog
+    )
+    messages = [SystemMessage(content=system), HumanMessage(content=body)]
     response = await llm.ainvoke(messages)
     content = response.content if isinstance(response.content, str) else str(
         response.content
@@ -142,19 +168,21 @@ async def extract_quote(context: str, instruction: str) -> QuoteDraft:
     return QuoteDraft.model_validate(_parse_json(content))
 
 
-async def draft_from_scratch(request: str) -> QuoteDraft:
+async def draft_from_scratch(request: str, catalog: str | None = None) -> QuoteDraft:
     """Genera un esqueleto de cotización SOLO desde el pedido (sin precedente ni docs).
 
     Pensado para el caso "no hay precedente": el LLM propone los ítems probables y deja
-    los precios en null/no_encontrado para que el usuario los cargue a mano.
+    los precios en null/no_encontrado para que el usuario los cargue a mano. Si hay
+    ``catalog`` (catálogo/tarifario del tenant), los ítems que coincidan salen con su
+    no_parte y precio reales en vez de null.
 
     Temperatura 0.0 para que el esqueleto sea estable y completo (mismo pedido → mismos
     ítems), tanto solo como dentro de la propuesta completa."""
     llm = get_chat_llm(streaming=False, temperature=0.0, max_tokens=4096)
-    messages = [
-        SystemMessage(content=SCRATCH_SYSTEM),
-        HumanMessage(content=f"PEDIDO DEL USUARIO:\n{request}"),
-    ]
+    system, body = _with_catalog(
+        SCRATCH_SYSTEM, f"PEDIDO DEL USUARIO:\n{request}", catalog
+    )
+    messages = [SystemMessage(content=system), HumanMessage(content=body)]
     response = await llm.ainvoke(messages)
     content = response.content if isinstance(response.content, str) else str(
         response.content
@@ -162,21 +190,23 @@ async def draft_from_scratch(request: str) -> QuoteDraft:
     return QuoteDraft.model_validate(_parse_json(content))
 
 
-async def draft_from_precedent(precedent: str, request: str) -> QuoteDraft:
+async def draft_from_precedent(
+    precedent: str, request: str, catalog: str | None = None
+) -> QuoteDraft:
     """Genera una NUEVA cotización usando uno o varios precedentes como plantilla.
 
     ``precedent`` puede contener uno o varios documentos completos, cada uno etiquetado
     como ``[PRECEDENTE n: archivo]`` (ver ``api.quotes._combine_precedents``)."""
     llm = get_chat_llm(streaming=False, temperature=0.1, max_tokens=4096)
-    messages = [
-        SystemMessage(content=GUIDED_SYSTEM),
-        HumanMessage(
-            content=(
-                f"PEDIDO DEL USUARIO:\n{request}\n\n"
-                f"PRECEDENTE(S) (usá como plantilla):\n{precedent}"
-            )
+    system, body = _with_catalog(
+        GUIDED_SYSTEM,
+        (
+            f"PEDIDO DEL USUARIO:\n{request}\n\n"
+            f"PRECEDENTE(S) (usá como plantilla):\n{precedent}"
         ),
-    ]
+        catalog,
+    )
+    messages = [SystemMessage(content=system), HumanMessage(content=body)]
     response = await llm.ainvoke(messages)
     content = response.content if isinstance(response.content, str) else str(
         response.content

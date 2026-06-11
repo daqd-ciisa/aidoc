@@ -21,11 +21,12 @@ async def index_document(ctx: dict, document_id: str) -> None:
         doc.status = DocumentStatus.PROCESSING.value
         doc.error = None
         await db.commit()
-        tenant_id, storage_key, filename, extension = (
+        tenant_id, storage_key, filename, extension, doc_type = (
             doc.tenant_id,
             doc.storage_key,
             doc.filename,
             doc.extension,
+            doc.doc_type,
         )
 
     try:
@@ -36,6 +37,7 @@ async def index_document(ctx: dict, document_id: str) -> None:
             storage_key=storage_key,
             filename=filename,
             extension=extension,
+            doc_type=doc_type,
         )
     except Exception as exc:  # noqa: BLE001 — registrar el fallo en el documento
         logger.exception("Fallo indexando %s", document_id)

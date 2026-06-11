@@ -224,21 +224,22 @@ async def _generate_sections_scratch(request: str) -> _SectionsLLM:
 
 
 async def build_proposal(
-    *, precedent: str | None, request: str, fecha: str
+    *, precedent: str | None, request: str, fecha: str, catalog: str | None = None
 ) -> ProposalDraft:
     """Arma la propuesta completa: boilerplate fijo + secciones LLM + económica.
 
     Corre en paralelo las dos llamadas al LLM (económica y secciones narrativas) y
     ensambla todo en orden. Si ``precedent`` es vacío/None redacta DESDE CERO (solo a
-    partir del pedido); si no, usa el/los precedente(s) como plantilla."""
+    partir del pedido); si no, usa el/los precedente(s) como plantilla. ``catalog``
+    (catálogo/tarifario del tenant) ancla no_parte y precios de la económica."""
     if precedent:
         economica, narr = await asyncio.gather(
-            draft_from_precedent(precedent, request),
+            draft_from_precedent(precedent, request, catalog=catalog),
             _generate_sections(precedent, request),
         )
     else:
         economica, narr = await asyncio.gather(
-            draft_from_scratch(request),
+            draft_from_scratch(request, catalog=catalog),
             _generate_sections_scratch(request),
         )
     # Limpiar etiquetas internas [PRECEDENTE n] que el LLM pueda haber filtrado.

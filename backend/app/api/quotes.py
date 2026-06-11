@@ -15,6 +15,7 @@ from app.api.deps import get_tenant_id
 from app.chat import rag
 from app.db.models.quote import Quote
 from app.db.session import get_db
+from app.quotes.catalog import catalog_context
 from app.quotes.extractor import (
     draft_from_precedent,
     draft_from_scratch,
@@ -165,6 +166,11 @@ def _precedent_ids(req: FromPrecedentRequest) -> list[str]:
     return out[:_MAX_PRECEDENTS]
 
 
+async def _catalog(tenant_id: str, request: str) -> str:
+    """Bloque de catálogo relevante al pedido ('' si no hay; nunca lanza)."""
+    return await asyncio.to_thread(catalog_context, tenant_id, request)
+
+
 async def _combine_precedents(
     tenant_id: str, document_ids: list[str]
 ) -> tuple[str, list[dict], list[BasedOn]]:
@@ -270,9 +276,12 @@ async def quote_from_precedent(
             detail="El documento precedente no tiene contenido indexado.",
         )
 
-    # 2. Generar la nueva cotización guiada por el/los precedente(s).
+    # 2. Generar la nueva cotización guiada por el/los precedente(s), anclada al
+    # catálogo del tenant (si hay).
     try:
-        draft = await draft_from_precedent(context, req.request)
+        draft = await draft_from_precedent(
+            context, req.request, catalog=await _catalog(tenant_id, req.request)
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Fallo generando cotización guiada")
         raise HTTPException(
@@ -349,7 +358,10 @@ async def proposal_from_precedent(
     # 2. Generar la propuesta completa (económica + secciones, en paralelo).
     try:
         proposal = await build_proposal(
-            precedent=context, request=req.request, fecha=_fecha_es(datetime.now())
+            precedent=context,
+            request=req.request,
+            fecha=_fecha_es(datetime.now()),
+            catalog=await _catalog(tenant_id, req.request),
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Fallo generando propuesta")
@@ -408,7 +420,9 @@ async def quote_from_scratch(
         raise HTTPException(status_code=422, detail="El pedido no puede estar vacío.")
 
     try:
-        draft = await draft_from_scratch(req.request)
+        draft = await draft_from_scratch(
+            req.request, catalog=await _catalog(tenant_id, req.request)
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Fallo generando cotización desde cero")
         raise HTTPException(
@@ -451,7 +465,10 @@ async def proposal_from_scratch(
 
     try:
         proposal = await build_proposal(
-            precedent=None, request=req.request, fecha=_fecha_es(datetime.now())
+            precedent=None,
+            request=req.request,
+            fecha=_fecha_es(datetime.now()),
+            catalog=await _catalog(tenant_id, req.request),
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Fallo generando propuesta desde cero")
@@ -509,9 +526,13 @@ async def generate_quote(
             detail="No hay contexto indexado para generar la cotización.",
         )
 
-    # 2. Extraer la cotización estructurada con el LLM.
+    # 2. Extraer la cotización estructurada con el LLM (+ catálogo si hay).
     try:
-        draft = await extract_quote(rag.build_context(chunks), instruction)
+        draft = await extract_quote(
+            rag.build_context(chunks),
+            instruction,
+            catalog=await _catalog(tenant_id, instruction),
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Fallo extrayendo cotización")
         raise HTTPException(

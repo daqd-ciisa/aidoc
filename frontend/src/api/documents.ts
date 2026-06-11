@@ -5,10 +5,12 @@ import type { DocumentRead, UploadResult } from "./types";
 export const listDocuments = () => apiGet<DocumentRead[]>("/documents");
 
 export async function uploadDocuments(
-  files: FileList | File[]
+  files: FileList | File[],
+  docType: "document" | "catalog" = "document"
 ): Promise<UploadResult> {
   const form = new FormData();
   Array.from(files).forEach((f) => form.append("files", f));
+  form.append("doc_type", docType);
   // Sin Content-Type: el browser lo setea con el boundary del multipart.
   const res = await fetch("/api/documents", {
     method: "POST",

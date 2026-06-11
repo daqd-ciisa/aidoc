@@ -20,6 +20,7 @@ export interface DocumentRead {
   status: DocumentStatus;
   chunk_count: number;
   source: string;
+  doc_type: "document" | "catalog";
   error: string | null;
   created_at: string;
   updated_at: string;

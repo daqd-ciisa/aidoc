@@ -17,6 +17,20 @@ class DocumentStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class DocumentType(str, enum.Enum):
+    """Naturaleza del documento dentro de la biblioteca.
+
+    - ``document``: contenido normal (propuestas, contratos…): consultable en el
+      chat y candidato a precedente de cotizaciones.
+    - ``catalog``: material de referencia (catálogo de servicios, tarifario): se
+      inyecta SIEMPRE como fuente de números de parte/precios al generar
+      cotizaciones, y NUNCA compite como precedente.
+    """
+
+    DOCUMENT = "document"
+    CATALOG = "catalog"
+
+
 class Document(UUIDMixin, TenantMixin, TimestampMixin, Base):
     """Un archivo subido por el usuario y su ciclo de vida de indexado."""
 
@@ -36,6 +50,9 @@ class Document(UUIDMixin, TenantMixin, TimestampMixin, Base):
     storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
     source: Mapped[str] = mapped_column(
         String(64), nullable=False, default="manual_upload"
+    )
+    doc_type: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=DocumentType.DOCUMENT.value
     )
     status: Mapped[str] = mapped_column(
         String(32),

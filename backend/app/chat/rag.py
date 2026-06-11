@@ -58,12 +58,14 @@ def retrieve(
     tenant_id: str,
     document_ids: list[str] | None = None,
     top_k: int | None = None,
+    doc_type: str | None = None,
 ) -> list[RetrievedChunk]:
     """Recupera los chunks más relevantes con búsqueda HÍBRIDA (SÍNCRONO).
 
     Trae un pool amplio por similitud semántica y lo re-rankea sumando un boost
     léxico por coincidencia de palabras clave de la consulta (rescata tablas/OCR
-    que el coseno puro deja fuera)."""
+    que el coseno puro deja fuera). ``doc_type`` restringe a una naturaleza de
+    documento (ej. ``"catalog"`` para el material de referencia)."""
     k = top_k or settings.RETRIEVER_TOP_K
     vector = get_embeddings().embed_query(query)
     hits = qdrant.search(
@@ -71,6 +73,7 @@ def retrieve(
         tenant_id=tenant_id,
         document_ids=document_ids,
         top_k=max(k * 4, 30),  # pool de candidatos para re-rankear
+        doc_type=doc_type,
     )
 
     qterms = _query_terms(query)

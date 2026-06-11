@@ -4,14 +4,14 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_tenant_id
 from app.connectors.manual_upload import SOURCE_MANUAL
-from app.db.models.document import Document, DocumentStatus
+from app.db.models.document import Document, DocumentStatus, DocumentType
 from app.db.session import get_db
 from app.ingestion.intake import ingest_documents
 from app.services import qdrant, storage
@@ -31,6 +31,7 @@ class DocumentRead(BaseModel):
     status: str
     chunk_count: int
     source: str
+    doc_type: str
     error: str | None
     created_at: datetime
     updated_at: datetime
@@ -54,15 +55,21 @@ async def _get_owned(
 @router.post("")
 async def upload_documents(
     files: list[UploadFile] = File(...),
+    doc_type: str = Form(DocumentType.DOCUMENT.value),
     db: AsyncSession = Depends(get_db),
     tenant_id: str = Depends(get_tenant_id),
 ) -> UploadResult:
+    if doc_type not in {t.value for t in DocumentType}:
+        raise HTTPException(
+            status_code=422,
+            detail=f"doc_type inválido: {doc_type!r} (esperado 'document' o 'catalog')",
+        )
     items = [
         ((f.filename or "(sin nombre)"), await f.read(), f.content_type)
         for f in files
     ]
     created, duplicates, rejected = await ingest_documents(
-        db, tenant_id, items, source=SOURCE_MANUAL
+        db, tenant_id, items, source=SOURCE_MANUAL, doc_type=doc_type
     )
 
     return UploadResult(

@@ -44,7 +44,7 @@ def ensure_collection() -> None:
     # Índices de payload para filtrar eficiente por tenant y documento.
     from qdrant_client.models import PayloadSchemaType
 
-    for field in ("tenant_id", "document_id", "kind"):
+    for field in ("tenant_id", "document_id", "kind", "doc_type"):
         try:
             client.create_payload_index(
                 settings.QDRANT_COLLECTION, field, PayloadSchemaType.KEYWORD
@@ -60,10 +60,13 @@ def upsert_chunks(
     filename: str,
     chunks: list[Any],
     vectors: list[list[float]],
+    doc_type: str = "document",
 ) -> None:
     """Sube los vectores de los chunks de un documento.
 
     Cada ``chunk`` debe exponer ``.text``, ``.chunk_index`` y ``.page``.
+    ``doc_type`` (``"document"``/``"catalog"``) viaja en el payload para poder
+    filtrar el material de referencia al generar cotizaciones.
     """
     points = [
         PointStruct(
@@ -77,6 +80,7 @@ def upsert_chunks(
                 "chunk_index": chunk.chunk_index,
                 "text": chunk.text,
                 "kind": "chunk",
+                "doc_type": doc_type,
             },
         )
         for chunk, vector in zip(chunks, vectors)
@@ -125,18 +129,23 @@ def search(
     document_ids: list[str] | None = None,
     top_k: int = 8,
     kind: str | None = None,
+    doc_type: str | None = None,
 ) -> list[dict]:
     """Busca los puntos más relevantes, aislados por tenant.
 
     Si ``document_ids`` viene dado, restringe a esos documentos. ``kind`` filtra por
     tipo de punto: ``"summary"`` para la búsqueda de precedentes (un vector por
     documento); por defecto (``None``) busca contenido y EXCLUYE los resúmenes.
+    ``doc_type`` restringe a una naturaleza de documento (ej. ``"catalog"`` para el
+    material de referencia de cotizaciones).
     """
     must = [FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id))]
     if document_ids:
         must.append(
             FieldCondition(key="document_id", match=MatchAny(any=document_ids))
         )
+    if doc_type is not None:
+        must.append(FieldCondition(key="doc_type", match=MatchValue(value=doc_type)))
     must_not = None
     if kind is not None:
         must.append(FieldCondition(key="kind", match=MatchValue(value=kind)))

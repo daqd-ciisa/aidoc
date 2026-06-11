@@ -25,6 +25,7 @@ def run_indexing(
     storage_key: str,
     filename: str,
     extension: str,
+    doc_type: str = "document",
 ) -> int:
     """Indexa un documento ya almacenado. Devuelve el nº de chunks subidos."""
     parser = get_parser(extension)
@@ -57,16 +58,20 @@ def run_indexing(
         filename=filename,
         chunks=chunks,
         vectors=vectors,
+        doc_type=doc_type,
     )
 
     # Resumen de alta señal para la búsqueda de precedentes (punto kind="summary").
-    _index_summary(
-        embeddings=embeddings,
-        document_id=document_id,
-        tenant_id=tenant_id,
-        filename=filename,
-        full_text="\n".join(c.text for c in chunks),
-    )
+    # Los catálogos NO son precedentes: sin punto summary nunca compiten como
+    # plantilla de cotización (su rol es ser referencia de partes/precios).
+    if doc_type != "catalog":
+        _index_summary(
+            embeddings=embeddings,
+            document_id=document_id,
+            tenant_id=tenant_id,
+            filename=filename,
+            full_text="\n".join(c.text for c in chunks),
+        )
     return len(chunks)
 
 

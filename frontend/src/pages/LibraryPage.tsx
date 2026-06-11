@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  BookMarked,
   CloudUpload,
   FileText,
   FileType2,
@@ -77,6 +78,7 @@ export default function LibraryPage() {
   const [showGoogleSettings, setShowGoogleSettings] = useState(false);
   const [showOneDrive, setShowOneDrive] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [asCatalog, setAsCatalog] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -107,7 +109,7 @@ export default function LibraryPage() {
     setBusy(true);
     setNotice(null);
     try {
-      const res = await uploadDocuments(files);
+      const res = await uploadDocuments(files, asCatalog ? "catalog" : "document");
       const parts = [`${res.documents.length} subido(s)`];
       if (res.duplicates.length) parts.push(`${res.duplicates.length} duplicado(s)`);
       if (res.rejected.length) parts.push(`${res.rejected.length} rechazado(s)`);
@@ -232,6 +234,26 @@ export default function LibraryPage() {
           </p>
         </div>
 
+        {/* Tipo de documento a subir */}
+        <label className="mb-7 -mt-4 flex cursor-pointer items-start gap-2.5 rounded-xl border border-surface-200 bg-white px-4 py-3 shadow-soft dark:border-surface-800 dark:bg-surface-800/40">
+          <input
+            type="checkbox"
+            checked={asCatalog}
+            onChange={(e) => setAsCatalog(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-surface-300 text-brand-600 focus:ring-brand-500 dark:border-surface-600 dark:bg-surface-700"
+          />
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5 text-sm font-medium text-surface-700 dark:text-surface-200">
+              <BookMarked className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              Subir como catálogo de servicios / tarifario
+            </span>
+            <span className="mt-0.5 block text-xs text-surface-400 dark:text-surface-500">
+              Los catálogos se usan SIEMPRE como fuente de números de parte y
+              precios al generar cotizaciones, y no aparecen como precedentes.
+            </span>
+          </span>
+        </label>
+
         {/* Importar desde la nube */}
         <div className="mb-6 flex items-center gap-3">
           <div className="h-px flex-1 bg-surface-200 dark:bg-surface-800" />
@@ -326,8 +348,16 @@ export default function LibraryPage() {
                           <Icon className="h-[18px] w-[18px]" />
                         </div>
                         <div className="min-w-0">
-                          <div className="truncate font-medium text-surface-800 dark:text-surface-100">
-                            {d.filename}
+                          <div className="flex items-center gap-2">
+                            <span className="truncate font-medium text-surface-800 dark:text-surface-100">
+                              {d.filename}
+                            </span>
+                            {d.doc_type === "catalog" && (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20">
+                                <BookMarked className="h-3 w-3" />
+                                Catálogo
+                              </span>
+                            )}
                           </div>
                           {d.error && (
                             <div

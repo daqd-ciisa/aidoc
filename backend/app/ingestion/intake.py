@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.document import Document, DocumentStatus
+from app.db.models.document import Document, DocumentStatus, DocumentType
 from app.ingestion.parsers import SUPPORTED_EXTENSIONS
 from app.services import storage
 from app.services.queue import enqueue_index
@@ -26,11 +26,14 @@ async def ingest_documents(
     tenant_id: str,
     items: list[IntakeItem],
     source: str,
+    doc_type: str = DocumentType.DOCUMENT.value,
 ) -> tuple[list[Document], list[str], list[str]]:
     """Procesa una lista de archivos. Devuelve (creados, duplicados, rechazados).
 
     - rechazado: extensión no soportada.
     - duplicado: ya existe un documento con el mismo sha256 en el tenant.
+    - ``doc_type``: ``"document"`` (default) o ``"catalog"`` (material de
+      referencia para cotizaciones).
     """
     created: list[Document] = []
     duplicates: list[str] = []
@@ -69,6 +72,7 @@ async def ingest_documents(
             content_hash=content_hash,
             storage_key=storage_key,
             source=source,
+            doc_type=doc_type,
             status=DocumentStatus.PENDING.value,
         )
         db.add(doc)

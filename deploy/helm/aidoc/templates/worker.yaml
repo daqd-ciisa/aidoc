@@ -4,6 +4,8 @@ metadata:
   name: {{ .Release.Name }}-worker
 spec:
   replicas: {{ .Values.worker.replicas }}
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: {{ .Release.Name }}-worker

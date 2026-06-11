@@ -4,6 +4,10 @@ metadata:
   name: {{ .Release.Name }}-backend
 spec:
   replicas: {{ .Values.backend.replicas }}
+  # Recreate: baja el pod viejo antes de subir el nuevo. Evita que el rolling
+  # update quede Pending por falta de recursos para los pods duplicados.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: {{ .Release.Name }}-backend

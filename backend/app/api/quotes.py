@@ -21,6 +21,7 @@ from app.quotes.extractor import (
     draft_from_scratch,
     extract_quote,
 )
+from app.quotes.docx import render_proposal_docx, render_quote_docx
 from app.quotes.pdf import render_proposal_pdf, render_quote_pdf
 from app.quotes.proposal import ProposalDraft, build_proposal
 from app.quotes.schema import QuoteDraft
@@ -123,6 +124,13 @@ _MESES_ES = [
 
 def _fecha_es(dt: datetime) -> str:
     return f"{dt.day:02d} de {_MESES_ES[dt.month - 1]} de {dt.year}"
+
+
+def _safe_name(title: str) -> str:
+    """Nombre de archivo seguro a partir del título de la cotización."""
+    return "".join(
+        c if c.isalnum() or c in (" ", "-", "_") else "_" for c in title
+    ).strip() or "cotizacion"
 
 
 DEFAULT_VIGENCIA_DIAS = 30
@@ -646,13 +654,41 @@ async def quote_pdf(
         draft = QuoteDraft.model_validate(quote.data)
         pdf = render_quote_pdf(draft, quote.title, quote_number=quote.id[:8])
 
-    safe = "".join(
-        c if c.isalnum() or c in (" ", "-", "_") else "_" for c in quote.title
-    ).strip() or "cotizacion"
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="{safe}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="{_safe_name(quote.title)}.pdf"'},
+    )
+
+
+@router.get("/{quote_id}/docx")
+async def quote_docx(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+    tenant_id: str = Depends(get_tenant_id),
+) -> Response:
+    """Renderiza la cotización/propuesta a un Word (.docx) editable.
+
+    Espejo del endpoint ``/pdf`` con la misma plantilla CiiSA, para quienes prefieren
+    ajustar el documento en Word antes de enviarlo."""
+    quote = await db.get(Quote, quote_id)
+    if quote is None or quote.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+
+    if isinstance(quote.data, dict) and quote.data.get("kind") == "proposal":
+        docx = render_proposal_docx(ProposalDraft.model_validate(quote.data), quote.title)
+    else:
+        draft = QuoteDraft.model_validate(quote.data)
+        docx = render_quote_docx(draft, quote.title, quote_number=quote.id[:8])
+
+    return Response(
+        content=docx,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        headers={
+            "Content-Disposition": f'attachment; filename="{_safe_name(quote.title)}.docx"'
+        },
     )
 
 

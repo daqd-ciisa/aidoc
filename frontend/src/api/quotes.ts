@@ -74,25 +74,35 @@ export const updateProposal = (
     title: title ?? null,
   });
 
-/** Descarga el PDF (cotización o propuesta) con el token, y dispara la descarga. */
-export async function downloadQuotePdf(
+/** Descarga la cotización/propuesta con el token y dispara la descarga del archivo. */
+async function downloadQuoteAs(
   quoteId: string,
-  filename: string
+  filename: string,
+  format: "pdf" | "docx"
 ): Promise<void> {
-  const res = await fetch(`/api/quotes/${quoteId}/pdf`, {
+  const res = await fetch(`/api/quotes/${quoteId}/${format}`, {
     headers: { ...authHeaders() },
   });
-  if (!res.ok) throw new Error("No se pudo generar el PDF");
+  if (!res.ok)
+    throw new Error(`No se pudo generar el ${format.toUpperCase()}`);
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+  a.download = filename.endsWith(`.${format}`) ? filename : `${filename}.${format}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+/** Descarga el PDF (cotización o propuesta) con el token. */
+export const downloadQuotePdf = (quoteId: string, filename: string) =>
+  downloadQuoteAs(quoteId, filename, "pdf");
+
+/** Descarga el Word (.docx) editable (cotización o propuesta) con el token. */
+export const downloadQuoteDocx = (quoteId: string, filename: string) =>
+  downloadQuoteAs(quoteId, filename, "docx");
 
 // ── Edición manual ────────────────────────────────────────────────────────────
 

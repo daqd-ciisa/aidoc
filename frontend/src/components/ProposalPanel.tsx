@@ -3,6 +3,7 @@ import {
   Check,
   FileDown,
   FileText,
+  FileType2,
   Loader2,
   Plus,
   ScrollText,
@@ -16,7 +17,7 @@ import type {
   ProposalSection,
   QuoteItem,
 } from "../api/types";
-import { downloadQuotePdf, updateProposal } from "../api/quotes";
+import { downloadQuoteDocx, downloadQuotePdf, updateProposal } from "../api/quotes";
 
 const IVA_RATE = 0.16;
 
@@ -62,7 +63,7 @@ export default function ProposalPanel({
   const [taxAuto, setTaxAuto] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"pdf" | "docx" | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const econ = form.economica;
@@ -155,16 +156,17 @@ export default function ProposalPanel({
     }
   }
 
-  async function saveAndDownload() {
+  async function saveAndDownload(format: "pdf" | "docx") {
     const updated = await save();
     if (!updated) return;
-    setDownloading(true);
+    setDownloading(format);
     try {
-      await downloadQuotePdf(quoteId, title || "cotizacion");
+      if (format === "pdf") await downloadQuotePdf(quoteId, title || "cotizacion");
+      else await downloadQuoteDocx(quoteId, title || "cotizacion");
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
-      setDownloading(false);
+      setDownloading(null);
     }
   }
 
@@ -323,7 +325,7 @@ export default function ProposalPanel({
           )}
           <button
             onClick={() => save()}
-            disabled={saving || downloading}
+            disabled={saving || downloading !== null}
             className="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-200 dark:hover:border-brand-600 dark:hover:bg-brand-500/10"
           >
             {saving ? (
@@ -334,11 +336,23 @@ export default function ProposalPanel({
             Guardar
           </button>
           <button
-            onClick={saveAndDownload}
-            disabled={saving || downloading}
+            onClick={() => saveAndDownload("docx")}
+            disabled={saving || downloading !== null}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-200 dark:hover:border-brand-600 dark:hover:bg-brand-500/10"
+          >
+            {downloading === "docx" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileType2 className="h-3.5 w-3.5" />
+            )}
+            Guardar y descargar Word
+          </button>
+          <button
+            onClick={() => saveAndDownload("pdf")}
+            disabled={saving || downloading !== null}
             className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-1.5 text-xs font-medium text-white shadow-soft transition hover:bg-brand-600 disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-400"
           >
-            {downloading ? (
+            {downloading === "pdf" ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <FileDown className="h-3.5 w-3.5" />

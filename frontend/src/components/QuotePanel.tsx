@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   FileDown,
   FileText,
+  FileType2,
   Loader2,
   Pencil,
   Plus,
@@ -13,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import type { BasedOn, QuoteDraft, QuoteItem } from "../api/types";
-import { downloadQuotePdf, updateQuote } from "../api/quotes";
+import { downloadQuoteDocx, downloadQuotePdf, updateQuote } from "../api/quotes";
 
 function fmt(n: number | null, currency?: string | null): string {
   if (n == null) return "—";
@@ -108,20 +109,21 @@ export default function QuotePanel({
   // pasa a false en cuanto el usuario edita el campo a mano.
   const [taxAuto, setTaxAuto] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"pdf" | "docx" | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  async function download() {
+  async function download(format: "pdf" | "docx") {
     if (!quoteId) return;
-    setDownloading(true);
+    setDownloading(format);
     setErr(null);
     try {
       const name = draft.cliente ? `Cotizacion ${draft.cliente}` : "cotizacion";
-      await downloadQuotePdf(quoteId, name);
+      if (format === "pdf") await downloadQuotePdf(quoteId, name);
+      else await downloadQuoteDocx(quoteId, name);
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     } finally {
-      setDownloading(false);
+      setDownloading(null);
     }
   }
 
@@ -552,18 +554,32 @@ export default function QuotePanel({
                 </span>
               )}
               {quoteId ? (
-                <button
-                  onClick={download}
-                  disabled={downloading}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white shadow-soft transition hover:bg-brand-600 disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-400"
-                >
-                  {downloading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <FileDown className="h-3.5 w-3.5" />
-                  )}
-                  Descargar PDF
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => download("docx")}
+                    disabled={downloading !== null}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-surface-300 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-200 dark:hover:border-brand-600 dark:hover:bg-brand-500/10"
+                  >
+                    {downloading === "docx" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <FileType2 className="h-3.5 w-3.5" />
+                    )}
+                    Word
+                  </button>
+                  <button
+                    onClick={() => download("pdf")}
+                    disabled={downloading !== null}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white shadow-soft transition hover:bg-brand-600 disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-400"
+                  >
+                    {downloading === "pdf" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <FileDown className="h-3.5 w-3.5" />
+                    )}
+                    Descargar PDF
+                  </button>
+                </div>
               ) : (
                 <button
                   disabled

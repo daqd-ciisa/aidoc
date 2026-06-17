@@ -12,13 +12,14 @@ import type { DriveFile, ImportResult } from "../api/connectors";
 import { importFromOneDrive } from "../api/connectors";
 import {
   getOneDriveToken,
+  getOneDriveTokenSilent,
   isOneDriveConfigured,
   listChildren,
   setOneDriveClientId,
   type DriveItem,
 } from "../lib/oneDrive";
 
-type Step = "config" | "loading" | "browse" | "importing";
+type Step = "config" | "connect" | "loading" | "browse" | "importing";
 interface Crumb {
   id?: string;
   name: string;
@@ -50,6 +51,8 @@ export default function OneDrivePickerModal({
     }
   }, []);
 
+  // Abre el popup de Microsoft. DEBE nacer de un clic (gesto del usuario), si no
+  // el navegador lo bloquea (popup_window_error).
   const connect = useCallback(async () => {
     setStep("loading");
     setErr(null);
@@ -60,13 +63,33 @@ export default function OneDrivePickerModal({
       await load(tok);
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
-      setStep(isOneDriveConfigured() ? "browse" : "config");
+      setStep("connect");
     }
   }, [load]);
 
+  // Al abrir: si ya hay sesión, entra sin popup; si no, muestra "Conectar".
   useEffect(() => {
-    if (isOneDriveConfigured()) connect();
-  }, [connect]);
+    if (!isOneDriveConfigured()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const tok = await getOneDriveTokenSilent();
+        if (cancelled) return;
+        if (tok) {
+          setToken(tok);
+          setStep("browse");
+          await load(tok);
+        } else {
+          setStep("connect");
+        }
+      } catch {
+        if (!cancelled) setStep("connect");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
 
   function saveConfig() {
     if (!clientId.trim()) return;
@@ -194,6 +217,25 @@ export default function OneDrivePickerModal({
             <Loader2 className="h-6 w-6 animate-spin text-brand-500" />
             <p className="mt-3 text-sm text-surface-500 dark:text-surface-400">
               Conectando con Microsoft…
+            </p>
+          </div>
+        )}
+
+        {/* Connect (el popup debe nacer de este clic) */}
+        {step === "connect" && (
+          <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
+              <Cloud className="h-6 w-6" />
+            </div>
+            <p className="mt-3 max-w-xs text-sm text-surface-500 dark:text-surface-400">
+              Iniciá sesión con tu cuenta de Microsoft para explorar tu OneDrive.
+              Se abrirá una ventana emergente.
+            </p>
+            <button onClick={connect} className="btn-primary mt-4">
+              Conectar con Microsoft
+            </button>
+            <p className="mt-3 text-xs text-surface-400 dark:text-surface-500">
+              Si no se abre, permití las ventanas emergentes para este sitio.
             </p>
           </div>
         )}

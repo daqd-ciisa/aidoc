@@ -25,3 +25,20 @@ export const importFromOneDrive = (accessToken: string, files: DriveFile[]) =>
     access_token: accessToken,
     files,
   });
+
+export interface SharePointFile {
+  id: string;
+  name: string;
+  site_id: string;
+  drive_id: string;
+  mimeType?: string;
+}
+
+export const importFromSharePoint = (
+  accessToken: string,
+  files: SharePointFile[]
+) =>
+  apiPost<ImportResult>("/connectors/sharepoint/import", {
+    access_token: accessToken,
+    files,
+  });

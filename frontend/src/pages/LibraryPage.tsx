@@ -8,6 +8,7 @@ import {
   FileSpreadsheet,
   File as FileIcon,
   Cloud,
+  Share2,
   HardDriveDownload,
   RotateCw,
   Settings2,
@@ -28,6 +29,7 @@ import type { DocumentRead } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
 import GoogleSettingsModal from "../components/GoogleSettingsModal";
 import OneDrivePickerModal from "../components/OneDrivePickerModal";
+import SharePointPickerModal from "../components/SharePointPickerModal";
 import type { ImportResult } from "../api/connectors";
 
 const ACCEPT = ".pdf,.docx,.txt,.md,.xlsx,.csv";
@@ -77,6 +79,7 @@ export default function LibraryPage() {
   const [driveBusy, setDriveBusy] = useState(false);
   const [showGoogleSettings, setShowGoogleSettings] = useState(false);
   const [showOneDrive, setShowOneDrive] = useState(false);
+  const [showSharePoint, setShowSharePoint] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [asCatalog, setAsCatalog] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -290,6 +293,14 @@ export default function LibraryPage() {
             <Cloud className="h-4 w-4 text-brand-600 dark:text-brand-400" />
             OneDrive
           </button>
+          <button
+            onClick={() => setShowSharePoint(true)}
+            title="Importar archivos de SharePoint"
+            className="inline-flex items-center gap-2 rounded-lg border border-surface-300 bg-white px-3.5 py-2 text-sm font-medium text-surface-700 shadow-soft transition hover:border-brand-300 hover:bg-surface-50 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-200 dark:hover:border-brand-600 dark:hover:bg-surface-700"
+          >
+            <Share2 className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+            SharePoint
+          </button>
           <div className="h-px flex-1 bg-surface-200 dark:bg-surface-800" />
         </div>
 
@@ -426,6 +437,20 @@ export default function LibraryPage() {
             if (res.rejected.length) parts.push(`${res.rejected.length} no soportado(s)`);
             if (res.failed.length) parts.push(`${res.failed.length} con error`);
             setNotice("OneDrive: " + parts.join(" · "));
+            refresh();
+          }}
+        />
+      )}
+
+      {showSharePoint && (
+        <SharePointPickerModal
+          onClose={() => setShowSharePoint(false)}
+          onImported={(res: ImportResult) => {
+            const parts = [`${res.documents.length} importado(s)`];
+            if (res.duplicates.length) parts.push(`${res.duplicates.length} duplicado(s)`);
+            if (res.rejected.length) parts.push(`${res.rejected.length} no soportado(s)`);
+            if (res.failed.length) parts.push(`${res.failed.length} con error`);
+            setNotice("SharePoint: " + parts.join(" · "));
             refresh();
           }}
         />

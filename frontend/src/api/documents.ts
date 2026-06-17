@@ -9,13 +9,11 @@ export const listDocuments = (docType?: "document" | "catalog" | "reference") =>
 
 export async function uploadDocuments(
   files: FileList | File[],
-  docType: "document" | "catalog" | "reference" = "document",
-  vendor?: string
+  docType: "document" | "catalog" | "reference" = "document"
 ): Promise<UploadResult> {
   const form = new FormData();
   Array.from(files).forEach((f) => form.append("files", f));
   form.append("doc_type", docType);
-  if (vendor) form.append("vendor", vendor);
   // Sin Content-Type: el browser lo setea con el boundary del multipart.
   const res = await fetch("/api/documents", {
     method: "POST",

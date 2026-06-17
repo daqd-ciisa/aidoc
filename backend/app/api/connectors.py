@@ -51,7 +51,6 @@ class SharePointImportRequest(BaseModel):
 
 class UrlImportRequest(BaseModel):
     url: str
-    vendor: str | None = None
     doc_type: str = DocumentType.REFERENCE.value
 
 
@@ -192,7 +191,6 @@ async def url_import(
         [item],
         source=SOURCE_URL,
         doc_type=req.doc_type,
-        vendor=(req.vendor or None),
         origin_url=url,
     )
 

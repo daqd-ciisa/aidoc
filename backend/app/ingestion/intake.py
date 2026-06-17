@@ -27,7 +27,6 @@ async def ingest_documents(
     items: list[IntakeItem],
     source: str,
     doc_type: str = DocumentType.DOCUMENT.value,
-    vendor: str | None = None,
     origin_url: str | None = None,
 ) -> tuple[list[Document], list[str], list[str]]:
     """Procesa una lista de archivos. Devuelve (creados, duplicados, rechazados).
@@ -36,7 +35,7 @@ async def ingest_documents(
     - duplicado: ya existe un documento con el mismo sha256 en el tenant.
     - ``doc_type``: ``"document"`` (default), ``"catalog"`` (material de
       referencia para cotizaciones) o ``"reference"`` (fuente aprobada externa).
-    - ``vendor``/``origin_url``: metadata de fuente aprobada (ver Document).
+    - ``origin_url``: URL de origen de una fuente aprobada por web (ver Document).
     """
     created: list[Document] = []
     duplicates: list[str] = []
@@ -76,7 +75,6 @@ async def ingest_documents(
             storage_key=storage_key,
             source=source,
             doc_type=doc_type,
-            vendor=vendor,
             origin_url=origin_url,
             status=DocumentStatus.PENDING.value,
         )

@@ -59,9 +59,8 @@ class Document(UUIDMixin, TenantMixin, TimestampMixin, Base):
     doc_type: Mapped[str] = mapped_column(
         String(16), nullable=False, default=DocumentType.DOCUMENT.value
     )
-    # Solo para fuentes aprobadas (doc_type="reference"): etiqueta de fabricante/
-    # tipo (ej. "HPE QuickSpecs", "Microsoft 365") y URL de origen si vino por web.
-    vendor: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Solo para fuentes aprobadas (doc_type="reference") dadas de alta por web:
+    # URL de origen (trazabilidad de la fuente).
     origin_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32),

@@ -21,18 +21,8 @@ import { importFromUrl } from "../api/connectors";
 import type { DocumentRead } from "../api/types";
 import StatusBadge from "../components/StatusBadge";
 
-// Presets de fabricante/tipo de las fuentes aprobadas (campo `vendor`).
-const VENDORS = [
-  "HPE QuickSpecs",
-  "HPE Seismic",
-  "HPE Aruba",
-  "Microsoft 365",
-  "Otro",
-];
-
 export default function SourcesPage() {
   const [docs, setDocs] = useState<DocumentRead[]>([]);
-  const [vendor, setVendor] = useState(VENDORS[0]);
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -77,7 +67,7 @@ export default function SourcesPage() {
     setErr(null);
     setBusy(true);
     try {
-      const res = await uploadDocuments(files, "reference", vendor);
+      const res = await uploadDocuments(files, "reference");
       summarize(res);
       await refresh();
     } catch (e) {
@@ -94,7 +84,7 @@ export default function SourcesPage() {
     setErr(null);
     setBusy(true);
     try {
-      const res = await importFromUrl(u, vendor, "reference");
+      const res = await importFromUrl(u, "reference");
       summarize(res);
       setUrl("");
       await refresh();
@@ -138,22 +128,6 @@ export default function SourcesPage() {
         {/* Alta de fuente */}
         <div className="mb-5 rounded-xl border border-surface-200 bg-white p-4 shadow-soft dark:border-surface-800 dark:bg-surface-800/40">
           <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">
-                Fabricante / tipo
-              </label>
-              <select
-                value={vendor}
-                onChange={(e) => setVendor(e.target.value)}
-                className="rounded-lg border border-surface-300 bg-white px-3 py-2 text-sm text-surface-800 focus:border-brand-300 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-surface-700 dark:bg-surface-900 dark:text-surface-100"
-              >
-                {VENDORS.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div className="min-w-[260px] flex-1">
               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-surface-500 dark:text-surface-400">
                 Por URL (web pública)
@@ -228,7 +202,6 @@ export default function SourcesPage() {
             <thead>
               <tr className="border-b border-surface-200 bg-surface-50 text-left text-[11px] font-semibold uppercase tracking-wider text-surface-500 dark:border-surface-800 dark:bg-surface-800/60 dark:text-surface-400">
                 <th className="px-5 py-3">Fuente</th>
-                <th className="w-44 px-5 py-3">Fabricante / tipo</th>
                 <th className="w-32 px-5 py-3">Estado</th>
                 <th className="w-24 px-5 py-3">Fragmentos</th>
                 <th className="w-28 px-5 py-3 text-right">Acciones</th>
@@ -237,7 +210,7 @@ export default function SourcesPage() {
             <tbody className="divide-y divide-surface-100 dark:divide-surface-800">
               {docs.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center">
+                  <td colSpan={4} className="px-5 py-16 text-center">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-100 text-surface-400 dark:bg-surface-800 dark:text-surface-500">
                       <BadgeCheck className="h-6 w-6" />
                     </div>
@@ -273,16 +246,6 @@ export default function SourcesPage() {
                         )}
                       </div>
                     </div>
-                  </td>
-                  <td className="px-5 py-3">
-                    {d.vendor ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 ring-1 ring-brand-100 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/20">
-                        <ShieldCheck className="h-3 w-3" />
-                        {d.vendor}
-                      </span>
-                    ) : (
-                      <span className="text-xs text-surface-400">—</span>
-                    )}
                   </td>
                   <td className="px-5 py-3">
                     <StatusBadge status={d.status} />

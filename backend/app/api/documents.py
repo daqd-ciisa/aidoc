@@ -32,7 +32,6 @@ class DocumentRead(BaseModel):
     chunk_count: int
     source: str
     doc_type: str
-    vendor: str | None = None
     origin_url: str | None = None
     error: str | None
     created_at: datetime
@@ -58,7 +57,6 @@ async def _get_owned(
 async def upload_documents(
     files: list[UploadFile] = File(...),
     doc_type: str = Form(DocumentType.DOCUMENT.value),
-    vendor: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     tenant_id: str = Depends(get_tenant_id),
 ) -> UploadResult:
@@ -73,8 +71,7 @@ async def upload_documents(
         for f in files
     ]
     created, duplicates, rejected = await ingest_documents(
-        db, tenant_id, items, source=SOURCE_MANUAL, doc_type=doc_type,
-        vendor=(vendor or None),
+        db, tenant_id, items, source=SOURCE_MANUAL, doc_type=doc_type
     )
 
     return UploadResult(

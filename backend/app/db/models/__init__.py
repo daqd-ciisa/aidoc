@@ -2,6 +2,7 @@
 
 Importar acá cada modelo para que Alembic los detecte vía ``Base.metadata``.
 """
+from app.db.models.approved_url import ApprovedUrl
 from app.db.models.chat import ChatMessage, ChatSession, MessageRole
 from app.db.models.document import Document, DocumentStatus
 from app.db.models.organization import Organization
@@ -17,4 +18,5 @@ __all__ = [
     "ChatMessage",
     "MessageRole",
     "Quote",
+    "ApprovedUrl",
 ]

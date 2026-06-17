@@ -143,8 +143,17 @@ export interface ClaimVerdict {
   afirmacion: string;
   estado: ClaimEstado;
   fuente: string | null;
+  /** URL aprobada de la que salió el respaldo (si fue una fuente en vivo). */
+  fuente_url: string | null;
   snippet: string | null;
   motivo: string | null;
+}
+
+export interface ApprovedUrl {
+  id: string;
+  url: string;
+  label: string | null;
+  created_at: string;
 }
 
 export interface ValidationReport {

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Check,
+  ExternalLink,
   FileDown,
   FileText,
   FileType2,
@@ -647,12 +648,24 @@ function ValidationReportView({ report }: { report: ValidationReport }) {
                     >
                       {cfg.label}
                     </span>
-                    {v.fuente && (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-surface-500 dark:text-surface-400">
-                        <FileText className="h-3 w-3" />
-                        {v.fuente}
-                      </span>
-                    )}
+                    {v.fuente &&
+                      (v.fuente_url ? (
+                        <a
+                          href={v.fuente_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] text-brand-600 hover:underline dark:text-brand-400"
+                          title={v.fuente_url}
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          {v.fuente}
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-surface-500 dark:text-surface-400">
+                          <FileText className="h-3 w-3" />
+                          {v.fuente}
+                        </span>
+                      ))}
                   </div>
                   {v.motivo && (
                     <p className="mt-1 text-xs text-surface-500 dark:text-surface-400">

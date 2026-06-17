@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_tenant_id
 from app.chat import rag
+from app.db.models.approved_url import ApprovedUrl
 from app.db.models.document import Document, DocumentStatus, DocumentType
 from app.db.models.quote import Quote
 from app.db.session import get_db
@@ -29,6 +30,7 @@ from app.quotes.schema import QuoteDraft
 from app.quotes.summarizer import rerank_precedents
 from app.quotes.validation import (
     ValidationReport,
+    fetch_live_chunks,
     validate_proposal,
     validate_quote,
 )
@@ -652,7 +654,12 @@ async def validate_quote_endpoint(
     if quote is None or quote.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Cotización no encontrada")
 
-    # Sin corpus aprobado indexado no hay contra qué validar.
+    # Fuentes aprobadas: URLs (consultadas EN VIVO) + documentos reference indexados.
+    url_rows = list(
+        await db.scalars(
+            select(ApprovedUrl).where(ApprovedUrl.tenant_id == tenant_id)
+        )
+    )
     has_reference = await db.scalar(
         select(Document.id)
         .where(
@@ -662,17 +669,21 @@ async def validate_quote_endpoint(
         )
         .limit(1)
     )
-    if not has_reference:
+    if not url_rows and not has_reference:
         return ValidationReport(corpus_vacio=True)
 
     try:
+        # Descargar en vivo las URLs aprobadas (degradación segura por URL).
+        live_chunks = await fetch_live_chunks(
+            [(r.url, r.label) for r in url_rows]
+        )
         if isinstance(quote.data, dict) and quote.data.get("kind") == "proposal":
             report = await validate_proposal(
-                ProposalDraft.model_validate(quote.data), tenant_id
+                ProposalDraft.model_validate(quote.data), tenant_id, live_chunks
             )
         else:
             report = await validate_quote(
-                QuoteDraft.model_validate(quote.data), tenant_id
+                QuoteDraft.model_validate(quote.data), tenant_id, live_chunks
             )
     except Exception as exc:  # noqa: BLE001
         logger.exception("Fallo validando contra fuentes aprobadas")

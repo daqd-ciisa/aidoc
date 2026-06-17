@@ -12,6 +12,7 @@ from app.api.connectors import router as connectors_router
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.api.quotes import router as quotes_router
+from app.api.sources import router as sources_router
 from app.auth.bootstrap import ensure_superadmin
 from app.config import settings
 from app.services import storage
@@ -51,3 +52,4 @@ app.include_router(documents_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(quotes_router, prefix="/api")
 app.include_router(connectors_router, prefix="/api")
+app.include_router(sources_router, prefix="/api")

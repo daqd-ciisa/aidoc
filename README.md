@@ -73,6 +73,21 @@ Las migraciones (`alembic upgrade head`) corren automáticamente al arrancar el 
 Gotcha del dev loop: el indexado corre en el contenedor **worker** (sin reload) —
 tras cambiar código de parsers/pipeline hay que `docker compose restart worker`.
 
+### Conectores externos (opcional)
+
+Además del upload manual, en **Biblioteca** se puede importar desde Google Drive,
+OneDrive y SharePoint. Se configuran con el Client ID de cada proveedor (desde la
+UI o por env en `frontend/.env`, ver `frontend/.env.example`) y la importación es
+puntual: el usuario elige los archivos y el backend los descarga e indexa por el
+mismo pipeline que el upload manual.
+
+- **OneDrive y SharePoint** comparten una sola App registration de Azure
+  (Microsoft Graph + MSAL). OneDrive usa el permiso `Files.Read` (lo consiente el
+  propio usuario); **SharePoint** usa `Sites.Read.All`, que **requiere
+  consentimiento del administrador** del tenant de Azure AD — sin ese consent el
+  conector autentica pero Graph responde 403. SharePoint navega
+  sitio → biblioteca de documentos → carpetas.
+
 ### Tests (backend)
 
 ```bash

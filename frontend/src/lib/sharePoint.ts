@@ -67,21 +67,28 @@ async function getPca(): Promise<PublicClientApplication> {
   return _pca;
 }
 
-/** Obtiene un access_token de Graph con scope Sites.Read.All. */
-export async function getSharePointToken(): Promise<string> {
+/** Intenta un access_token SIN popup (devuelve null si requiere interacción). */
+export async function getSharePointTokenSilent(): Promise<string | null> {
   const pca = await getPca();
   const accounts = pca.getAllAccounts();
+  if (accounts.length === 0) return null;
   try {
-    if (accounts.length > 0) {
-      const res = await pca.acquireTokenSilent({
-        scopes: SCOPES,
-        account: accounts[0],
-      });
-      return res.accessToken;
-    }
+    const res = await pca.acquireTokenSilent({
+      scopes: SCOPES,
+      account: accounts[0],
+    });
+    return res.accessToken;
   } catch {
-    /* cae a popup */
+    return null;
   }
+}
+
+/** Obtiene un access_token con popup. DEBE llamarse desde un gesto del usuario
+ * (clic): los navegadores bloquean popups que no nacen de una interacción. */
+export async function getSharePointToken(): Promise<string> {
+  const silent = await getSharePointTokenSilent();
+  if (silent) return silent;
+  const pca = await getPca();
   const res = await pca.acquireTokenPopup({ scopes: SCOPES });
   return res.accessToken;
 }

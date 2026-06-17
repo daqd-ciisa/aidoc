@@ -15,6 +15,7 @@ import type { ImportResult, SharePointFile } from "../api/connectors";
 import { importFromSharePoint } from "../api/connectors";
 import {
   getSharePointToken,
+  getSharePointTokenSilent,
   isSharePointConfigured,
   listChildren,
   listDrives,
@@ -25,7 +26,14 @@ import {
   type SiteItem,
 } from "../lib/sharePoint";
 
-type Step = "config" | "loading" | "sites" | "drives" | "files" | "importing";
+type Step =
+  | "config"
+  | "connect"
+  | "loading"
+  | "sites"
+  | "drives"
+  | "files"
+  | "importing";
 interface Crumb {
   id?: string;
   name: string;
@@ -68,6 +76,8 @@ export default function SharePointPickerModal({
     }
   }, []);
 
+  // Abre el popup de Microsoft. DEBE nacer de un clic (gesto del usuario), si no
+  // el navegador lo bloquea (popup_window_error).
   const connect = useCallback(async () => {
     setStep("loading");
     setErr(null);
@@ -78,13 +88,33 @@ export default function SharePointPickerModal({
       await findSites(tok, "");
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
-      setStep(isSharePointConfigured() ? "sites" : "config");
+      setStep("connect");
     }
   }, [findSites]);
 
+  // Al abrir: si ya hay sesión, entra sin popup; si no, muestra "Conectar".
   useEffect(() => {
-    if (isSharePointConfigured()) connect();
-  }, [connect]);
+    if (!isSharePointConfigured()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const tok = await getSharePointTokenSilent();
+        if (cancelled) return;
+        if (tok) {
+          setToken(tok);
+          setStep("sites");
+          await findSites(tok, "");
+        } else {
+          setStep("connect");
+        }
+      } catch {
+        if (!cancelled) setStep("connect");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [findSites]);
 
   function saveConfig() {
     if (!clientId.trim()) return;
@@ -246,6 +276,25 @@ export default function SharePointPickerModal({
             <Loader2 className="h-6 w-6 animate-spin text-brand-500" />
             <p className="mt-3 text-sm text-surface-500 dark:text-surface-400">
               Conectando con Microsoft…
+            </p>
+          </div>
+        )}
+
+        {/* Connect (el popup debe nacer de este clic) */}
+        {step === "connect" && (
+          <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400">
+              <Share2 className="h-6 w-6" />
+            </div>
+            <p className="mt-3 max-w-xs text-sm text-surface-500 dark:text-surface-400">
+              Iniciá sesión con tu cuenta de Microsoft para explorar los sitios de
+              SharePoint. Se abrirá una ventana emergente.
+            </p>
+            <button onClick={connect} className="btn-primary mt-4">
+              Conectar con Microsoft
+            </button>
+            <p className="mt-3 text-xs text-surface-400 dark:text-surface-500">
+              Si no se abre, permití las ventanas emergentes para este sitio.
             </p>
           </div>
         )}

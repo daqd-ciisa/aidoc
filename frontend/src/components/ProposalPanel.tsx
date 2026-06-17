@@ -8,16 +8,26 @@ import {
   Plus,
   ScrollText,
   Save,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldX,
   Trash2,
   X,
 } from "lucide-react";
 import type {
   BasedOn,
+  ClaimVerdict,
   ProposalDraft,
   ProposalSection,
   QuoteItem,
+  ValidationReport,
 } from "../api/types";
-import { downloadQuoteDocx, downloadQuotePdf, updateProposal } from "../api/quotes";
+import {
+  downloadQuoteDocx,
+  downloadQuotePdf,
+  updateProposal,
+  validateQuote,
+} from "../api/quotes";
 
 const IVA_RATE = 0.16;
 
@@ -64,6 +74,8 @@ export default function ProposalPanel({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [downloading, setDownloading] = useState<"pdf" | "docx" | null>(null);
+  const [validating, setValidating] = useState(false);
+  const [report, setReport] = useState<ValidationReport | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   const econ = form.economica;
@@ -153,6 +165,22 @@ export default function ProposalPanel({
       return null;
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function runValidation() {
+    // Guardar primero para validar exactamente lo que se ve en pantalla.
+    const updated = await save();
+    if (!updated) return;
+    setValidating(true);
+    setReport(null);
+    setErr(null);
+    try {
+      setReport(await validateQuote(quoteId));
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setValidating(false);
     }
   }
 
@@ -308,6 +336,8 @@ export default function ProposalPanel({
             )}
           </div>
 
+          {report && <ValidationReportView report={report} />}
+
           {err && (
             <div className="mt-4 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 ring-1 ring-red-200 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/30">
               {err}
@@ -317,6 +347,19 @@ export default function ProposalPanel({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 border-t border-surface-200 bg-surface-50 px-6 py-3.5 dark:border-surface-700 dark:bg-surface-900/50">
+          <button
+            onClick={runValidation}
+            disabled={saving || validating || downloading !== null}
+            title="Validar las afirmaciones técnicas contra las fuentes aprobadas del fabricante"
+            className="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-surface-300 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-200 dark:hover:border-brand-600 dark:hover:bg-brand-500/10"
+          >
+            {validating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ShieldCheck className="h-3.5 w-3.5" />
+            )}
+            Validar con fuentes
+          </button>
           {saved && (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 animate-fade-in dark:text-emerald-400">
               <Check className="h-3.5 w-3.5" />
@@ -519,6 +562,114 @@ function Economica({
           </div>
         </dl>
       </div>
+    </div>
+  );
+}
+
+const ESTADO_CFG = {
+  respaldado: {
+    label: "Respaldado",
+    icon: ShieldCheck,
+    cls: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/30",
+    dot: "text-emerald-500",
+  },
+  sin_respaldo: {
+    label: "Sin respaldo",
+    icon: ShieldAlert,
+    cls: "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/30",
+    dot: "text-amber-500",
+  },
+  contradice: {
+    label: "Contradice",
+    icon: ShieldX,
+    cls: "bg-red-50 text-red-700 ring-red-200 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/30",
+    dot: "text-red-500",
+  },
+} as const;
+
+function ValidationReportView({ report }: { report: ValidationReport }) {
+  if (report.corpus_vacio) {
+    return (
+      <div className="mt-5 flex items-start gap-2 rounded-lg bg-amber-50 px-3.5 py-3 text-xs text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/30">
+        <ShieldAlert className="h-4 w-4 shrink-0" />
+        <span>
+          No hay fuentes aprobadas indexadas para validar. Agregá documentación
+          del fabricante en <b>Fuentes externas</b> y volvé a intentar.
+        </span>
+      </div>
+    );
+  }
+
+  if (report.afirmaciones.length === 0) {
+    return (
+      <div className="mt-5 rounded-lg bg-surface-50 px-3.5 py-3 text-xs text-surface-500 ring-1 ring-surface-200 dark:bg-surface-900/50 dark:text-surface-400 dark:ring-surface-700">
+        No se detectaron afirmaciones técnicas verificables en esta propuesta.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 border-t border-surface-200 pt-4 dark:border-surface-700">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-bold text-surface-800 dark:text-surface-100">
+          Validación contra fuentes aprobadas
+        </h3>
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/30">
+          {report.respaldadas} respaldada(s)
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/30">
+          {report.sin_respaldo} sin respaldo
+        </span>
+        {report.contradichas > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 ring-1 ring-red-200 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/30">
+            {report.contradichas} contradicción(es)
+          </span>
+        )}
+      </div>
+      <ul className="space-y-2">
+        {report.afirmaciones.map((v: ClaimVerdict, i: number) => {
+          const cfg = ESTADO_CFG[v.estado] ?? ESTADO_CFG.sin_respaldo;
+          const Icon = cfg.icon;
+          return (
+            <li
+              key={i}
+              className="rounded-lg border border-surface-200 px-3 py-2.5 dark:border-surface-700"
+            >
+              <div className="flex items-start gap-2">
+                <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${cfg.dot}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-surface-800 dark:text-surface-100">
+                    {v.afirmacion}
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${cfg.cls}`}
+                    >
+                      {cfg.label}
+                    </span>
+                    {v.fuente && (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-surface-500 dark:text-surface-400">
+                        <FileText className="h-3 w-3" />
+                        {v.fuente}
+                      </span>
+                    )}
+                  </div>
+                  {v.motivo && (
+                    <p className="mt-1 text-xs text-surface-500 dark:text-surface-400">
+                      {v.motivo}
+                    </p>
+                  )}
+                  {v.snippet && (
+                    <p className="mt-1 border-l-2 border-surface-200 pl-2 text-[11px] italic text-surface-400 dark:border-surface-600 dark:text-surface-500">
+                      “{v.snippet}”
+                    </p>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

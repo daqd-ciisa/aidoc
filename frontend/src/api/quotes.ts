@@ -8,6 +8,7 @@ import type {
   QuoteDraft,
   QuoteRead,
   QuoteGenerated,
+  ValidationReport,
 } from "./types";
 
 export interface GenerateQuoteBody {
@@ -103,6 +104,13 @@ export const downloadQuotePdf = (quoteId: string, filename: string) =>
 /** Descarga el Word (.docx) editable (cotización o propuesta) con el token. */
 export const downloadQuoteDocx = (quoteId: string, filename: string) =>
   downloadQuoteAs(quoteId, filename, "docx");
+
+// ── Validación contra fuentes aprobadas ─────────────────────────────────────────
+
+/** Valida las afirmaciones técnicas de la cotización/propuesta contra el corpus
+ * aprobado (doc_type=reference). Devuelve un veredicto con cita por afirmación. */
+export const validateQuote = (quoteId: string) =>
+  apiPost<ValidationReport>(`/quotes/${quoteId}/validate`);
 
 // ── Edición manual ────────────────────────────────────────────────────────────
 

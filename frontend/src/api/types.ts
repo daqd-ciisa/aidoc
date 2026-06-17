@@ -135,6 +135,26 @@ export interface QuoteRead {
   updated_at: string;
 }
 
+// ── Validación contra fuentes aprobadas ─────────────────────────────────────────
+
+export type ClaimEstado = "respaldado" | "contradice" | "sin_respaldo";
+
+export interface ClaimVerdict {
+  afirmacion: string;
+  estado: ClaimEstado;
+  fuente: string | null;
+  snippet: string | null;
+  motivo: string | null;
+}
+
+export interface ValidationReport {
+  corpus_vacio: boolean;
+  afirmaciones: ClaimVerdict[];
+  respaldadas: number;
+  contradichas: number;
+  sin_respaldo: number;
+}
+
 export interface Precedent {
   document_id: string;
   filename: string;

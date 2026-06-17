@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_tenant_id
 from app.chat import rag
+from app.db.models.document import Document, DocumentStatus, DocumentType
 from app.db.models.quote import Quote
 from app.db.session import get_db
 from app.quotes.catalog import catalog_context
@@ -26,6 +27,11 @@ from app.quotes.pdf import render_proposal_pdf, render_quote_pdf
 from app.quotes.proposal import ProposalDraft, build_proposal
 from app.quotes.schema import QuoteDraft
 from app.quotes.summarizer import rerank_precedents
+from app.quotes.validation import (
+    ValidationReport,
+    validate_proposal,
+    validate_quote,
+)
 
 logger = logging.getLogger("aidoc.quotes")
 
@@ -632,6 +638,49 @@ async def update_proposal(
     await db.commit()
     await db.refresh(quote)
     return QuoteRead.model_validate(quote)
+
+
+@router.post("/{quote_id}/validate")
+async def validate_quote_endpoint(
+    quote_id: str,
+    db: AsyncSession = Depends(get_db),
+    tenant_id: str = Depends(get_tenant_id),
+) -> ValidationReport:
+    """Valida las afirmaciones técnicas de la cotización/propuesta contra las
+    FUENTES APROBADAS del fabricante (doc_type='reference'), con cita por afirmación."""
+    quote = await db.get(Quote, quote_id)
+    if quote is None or quote.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+
+    # Sin corpus aprobado indexado no hay contra qué validar.
+    has_reference = await db.scalar(
+        select(Document.id)
+        .where(
+            Document.tenant_id == tenant_id,
+            Document.doc_type == DocumentType.REFERENCE.value,
+            Document.status == DocumentStatus.INDEXED.value,
+        )
+        .limit(1)
+    )
+    if not has_reference:
+        return ValidationReport(corpus_vacio=True)
+
+    try:
+        if isinstance(quote.data, dict) and quote.data.get("kind") == "proposal":
+            report = await validate_proposal(
+                ProposalDraft.model_validate(quote.data), tenant_id
+            )
+        else:
+            report = await validate_quote(
+                QuoteDraft.model_validate(quote.data), tenant_id
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Fallo validando contra fuentes aprobadas")
+        raise HTTPException(
+            status_code=502, detail=f"Validación falló: {exc}"
+        ) from exc
+
+    return report
 
 
 @router.get("/{quote_id}/pdf")

@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import fitz
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -31,6 +32,7 @@ from app.connectors.web import fetch_url
 from app.quotes.extractor import _parse_json
 from app.quotes.proposal import ProposalDraft
 from app.quotes.schema import QuoteDraft
+from app.services.embeddings import get_embeddings
 from app.services.llm import get_chat_llm
 
 logger = logging.getLogger("aidoc.quotes.validation")
@@ -41,7 +43,7 @@ SIN_RESPALDO = "sin_respaldo"
 _ESTADOS = {RESPALDADO, CONTRADICE, SIN_RESPALDO}
 
 _MAX_CLAIMS = 12          # tope de afirmaciones a verificar (latencia/costo)
-_LIVE_PER_CLAIM = 4       # fragmentos en vivo por afirmación
+_LIVE_PER_CLAIM = 6       # fragmentos en vivo por afirmación
 _CORPUS_PER_CLAIM = 4     # fragmentos del corpus indexado por afirmación
 _CHUNK = 1400             # tamaño de fragmento del contenido en vivo
 _CHUNK_OVERLAP = 150
@@ -51,11 +53,16 @@ _MAX_CHUNKS_PER_URL = 40  # tope de fragmentos por URL (PDFs grandes)
 # ── Contenido en vivo de las URLs aprobadas ───────────────────────────────────
 
 
+# Peso del componente léxico sobre el semántico (igual criterio que rag.retrieve).
+_LEX_WEIGHT = 0.4
+
+
 @dataclass
 class LiveChunk:
     text: str
     url: str
     label: str
+    vector: list[float] | None = field(default=None, repr=False)
 
 
 def _split(text: str) -> list[str]:
@@ -94,7 +101,8 @@ def _fetch_one(url: str, label: str | None) -> list[LiveChunk]:
 
 
 async def fetch_live_chunks(sources: list[tuple[str, str | None]]) -> list[LiveChunk]:
-    """Descarga EN VIVO todas las URLs aprobadas y devuelve sus fragmentos."""
+    """Descarga EN VIVO todas las URLs aprobadas, las trocea y EMBEBE sus
+    fragmentos (para búsqueda semántica, que cruza idiomas y paráfrasis)."""
     if not sources:
         return []
     results = await asyncio.gather(
@@ -103,24 +111,52 @@ async def fetch_live_chunks(sources: list[tuple[str, str | None]]) -> list[LiveC
     chunks: list[LiveChunk] = []
     for r in results:
         chunks.extend(r)
+    if not chunks:
+        return []
+    # Embeber todos los fragmentos en un solo batch. Si falla (sin PCAI), se sigue
+    # con ranking solo léxico (vector=None).
+    try:
+        vectors = await asyncio.to_thread(
+            get_embeddings().embed_documents, [c.text for c in chunks]
+        )
+        for ch, vec in zip(chunks, vectors):
+            ch.vector = vec
+    except Exception:  # noqa: BLE001
+        logger.warning("No se pudieron embeber los fragmentos en vivo", exc_info=True)
     return chunks
 
 
-def _lexical_topk(claim: str, chunks: list[LiveChunk], k: int) -> list[LiveChunk]:
-    """Top-k fragmentos en vivo por coincidencia léxica con la afirmación."""
-    terms = rag._query_terms(claim)
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def _rank_live(
+    claim: str, claim_vec: list[float] | None, chunks: list[LiveChunk], k: int
+) -> list[LiveChunk]:
+    """Top-k fragmentos en vivo, HÍBRIDO: coseno semántico + boost léxico.
+
+    Mismo criterio que ``rag.retrieve``. El semántico es clave acá porque la
+    afirmación puede estar en otro idioma que la fuente (ej. pedido en español,
+    QuickSpec/MS Learn en inglés)."""
     if not chunks:
         return []
-    if not terms:
-        return chunks[:k]
-    scored: list[tuple[float, LiveChunk]] = []
-    for ch in chunks:
+    terms = rag._query_terms(claim)
+
+    def lex(ch: LiveChunk) -> float:
+        if not terms:
+            return 0.0
         words = set(re.findall(r"[a-z0-9]+", rag._normalize(ch.text)))
-        score = sum(1 for t in terms if t in words) / len(terms)
-        if score > 0:
-            scored.append((score, ch))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    return [ch for _, ch in scored[:k]]
+        return sum(1 for t in terms if t in words) / len(terms)
+
+    def score(ch: LiveChunk) -> float:
+        sem = _cosine(claim_vec, ch.vector) if (claim_vec and ch.vector) else 0.0
+        return sem + _LEX_WEIGHT * lex(ch)
+
+    ranked = sorted(chunks, key=score, reverse=True)
+    return ranked[:k]
 
 
 # ── Modelo de salida ──────────────────────────────────────────────────────────
@@ -217,9 +253,19 @@ class _Candidate:
 async def _verify_claim(
     afirmacion: str, tenant_id: str, live_chunks: list[LiveChunk]
 ) -> ClaimVerdict:
+    # Vector de la afirmación para el ranking semántico de las fuentes en vivo.
+    claim_vec: list[float] | None = None
+    if live_chunks:
+        try:
+            claim_vec = await asyncio.to_thread(
+                get_embeddings().embed_query, afirmacion
+            )
+        except Exception:  # noqa: BLE001
+            claim_vec = None
+
     candidates: list[_Candidate] = [
         _Candidate(text=ch.text, label=ch.label, url=ch.url)
-        for ch in _lexical_topk(afirmacion, live_chunks, _LIVE_PER_CLAIM)
+        for ch in _rank_live(afirmacion, claim_vec, live_chunks, _LIVE_PER_CLAIM)
     ]
     try:
         corpus = await asyncio.to_thread(

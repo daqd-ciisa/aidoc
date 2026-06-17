@@ -30,3 +30,4 @@ backend/log/
 .idea/
 .DS_Store
 Thumbs.db
+deploy/values-para-wizard.yaml

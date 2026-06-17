@@ -31,3 +31,8 @@ backend/log/
 .DS_Store
 Thumbs.db
 deploy/values-para-wizard.yaml
+
+# Artefactos personales (reporte de actividades, no son producto)
+gen_reporte.py
+deploy/kubiy_logo_trim.png
+imagenes de evidencia/

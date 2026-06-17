@@ -20,7 +20,11 @@ export interface DocumentRead {
   status: DocumentStatus;
   chunk_count: number;
   source: string;
-  doc_type: "document" | "catalog";
+  doc_type: "document" | "catalog" | "reference";
+  /** Solo fuentes aprobadas: etiqueta de fabricante/tipo (ej. "HPE QuickSpecs"). */
+  vendor?: string | null;
+  /** Solo fuentes aprobadas dadas de alta por web: URL de origen. */
+  origin_url?: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;

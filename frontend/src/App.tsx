@@ -8,12 +8,14 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Receipt,
+  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import ChatPage from "./pages/ChatPage";
 import LibraryPage from "./pages/LibraryPage";
 import QuotesPage from "./pages/QuotesPage";
+import SourcesPage from "./pages/SourcesPage";
 import LoginPage from "./pages/LoginPage";
 import ThemeToggle from "./components/ThemeToggle";
 import { useAuth } from "./context/AuthContext";
@@ -132,6 +134,7 @@ export default function App() {
             </p>
           )}
           <NavItem to="/library" label="Biblioteca" icon={Library} collapsed={collapsed} />
+          <NavItem to="/sources" label="Fuentes externas" icon={ShieldCheck} collapsed={collapsed} />
           <NavItem to="/chat" label="Chat" icon={MessagesSquare} collapsed={collapsed} />
           <NavItem to="/quotes" label="Cotizaciones" icon={Receipt} collapsed={collapsed} />
         </nav>
@@ -173,6 +176,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/library" replace />} />
           <Route path="/library" element={<LibraryPage />} />
+          <Route path="/sources" element={<SourcesPage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/quotes" element={<QuotesPage />} />
         </Routes>

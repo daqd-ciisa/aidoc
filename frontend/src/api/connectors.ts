@@ -42,3 +42,14 @@ export const importFromSharePoint = (
     access_token: accessToken,
     files,
   });
+
+export const importFromUrl = (
+  url: string,
+  vendor?: string,
+  docType: "reference" | "document" | "catalog" = "reference"
+) =>
+  apiPost<ImportResult>("/connectors/url/import", {
+    url,
+    vendor: vendor || null,
+    doc_type: docType,
+  });

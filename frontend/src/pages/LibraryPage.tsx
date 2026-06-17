@@ -87,7 +87,8 @@ export default function LibraryPage() {
 
   const refresh = useCallback(async () => {
     try {
-      setDocs(await listDocuments());
+      // Las fuentes aprobadas (reference) viven en su propia página.
+      setDocs((await listDocuments()).filter((d) => d.doc_type !== "reference"));
     } catch (e) {
       setNotice(String(e));
     }

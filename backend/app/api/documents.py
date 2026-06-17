@@ -32,6 +32,8 @@ class DocumentRead(BaseModel):
     chunk_count: int
     source: str
     doc_type: str
+    vendor: str | None = None
+    origin_url: str | None = None
     error: str | None
     created_at: datetime
     updated_at: datetime
@@ -56,20 +58,23 @@ async def _get_owned(
 async def upload_documents(
     files: list[UploadFile] = File(...),
     doc_type: str = Form(DocumentType.DOCUMENT.value),
+    vendor: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
     tenant_id: str = Depends(get_tenant_id),
 ) -> UploadResult:
     if doc_type not in {t.value for t in DocumentType}:
         raise HTTPException(
             status_code=422,
-            detail=f"doc_type inválido: {doc_type!r} (esperado 'document' o 'catalog')",
+            detail=f"doc_type inválido: {doc_type!r} "
+            "(esperado 'document', 'catalog' o 'reference')",
         )
     items = [
         ((f.filename or "(sin nombre)"), await f.read(), f.content_type)
         for f in files
     ]
     created, duplicates, rejected = await ingest_documents(
-        db, tenant_id, items, source=SOURCE_MANUAL, doc_type=doc_type
+        db, tenant_id, items, source=SOURCE_MANUAL, doc_type=doc_type,
+        vendor=(vendor or None),
     )
 
     return UploadResult(
@@ -81,14 +86,14 @@ async def upload_documents(
 
 @router.get("")
 async def list_documents(
+    doc_type: str | None = None,
     db: AsyncSession = Depends(get_db),
     tenant_id: str = Depends(get_tenant_id),
 ) -> list[DocumentRead]:
-    rows = await db.scalars(
-        select(Document)
-        .where(Document.tenant_id == tenant_id)
-        .order_by(Document.created_at.desc())
-    )
+    stmt = select(Document).where(Document.tenant_id == tenant_id)
+    if doc_type:
+        stmt = stmt.where(Document.doc_type == doc_type)
+    rows = await db.scalars(stmt.order_by(Document.created_at.desc()))
     return [DocumentRead.model_validate(d) for d in rows]
 
 

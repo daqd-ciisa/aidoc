@@ -62,9 +62,9 @@ def run_indexing(
     )
 
     # Resumen de alta señal para la búsqueda de precedentes (punto kind="summary").
-    # Los catálogos NO son precedentes: sin punto summary nunca compiten como
-    # plantilla de cotización (su rol es ser referencia de partes/precios).
-    if doc_type != "catalog":
+    # Los catálogos y las fuentes aprobadas NO son precedentes: sin punto summary
+    # nunca compiten como plantilla de cotización (su rol es ser referencia).
+    if doc_type not in ("catalog", "reference"):
         _index_summary(
             embeddings=embeddings,
             document_id=document_id,

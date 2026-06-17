@@ -2,15 +2,20 @@ import { apiDelete, apiGet, apiPost } from "./client";
 import { authHeaders, clearToken, notifyUnauthorized } from "../lib/auth";
 import type { DocumentRead, UploadResult } from "./types";
 
-export const listDocuments = () => apiGet<DocumentRead[]>("/documents");
+export const listDocuments = (docType?: "document" | "catalog" | "reference") =>
+  apiGet<DocumentRead[]>(
+    docType ? `/documents?doc_type=${docType}` : "/documents"
+  );
 
 export async function uploadDocuments(
   files: FileList | File[],
-  docType: "document" | "catalog" = "document"
+  docType: "document" | "catalog" | "reference" = "document",
+  vendor?: string
 ): Promise<UploadResult> {
   const form = new FormData();
   Array.from(files).forEach((f) => form.append("files", f));
   form.append("doc_type", docType);
+  if (vendor) form.append("vendor", vendor);
   // Sin Content-Type: el browser lo setea con el boundary del multipart.
   const res = await fetch("/api/documents", {
     method: "POST",

@@ -25,10 +25,15 @@ class DocumentType(str, enum.Enum):
     - ``catalog``: material de referencia (catálogo de servicios, tarifario): se
       inyecta SIEMPRE como fuente de números de parte/precios al generar
       cotizaciones, y NUNCA compite como precedente.
+    - ``reference``: FUENTE APROBADA externa (QuickSpecs de HPE, guías validadas
+      de Aruba, Microsoft 365 Learn…): documentación autoritativa del fabricante
+      para validar las afirmaciones técnicas de las propuestas. Tampoco compite
+      como precedente.
     """
 
     DOCUMENT = "document"
     CATALOG = "catalog"
+    REFERENCE = "reference"
 
 
 class Document(UUIDMixin, TenantMixin, TimestampMixin, Base):
@@ -54,6 +59,10 @@ class Document(UUIDMixin, TenantMixin, TimestampMixin, Base):
     doc_type: Mapped[str] = mapped_column(
         String(16), nullable=False, default=DocumentType.DOCUMENT.value
     )
+    # Solo para fuentes aprobadas (doc_type="reference"): etiqueta de fabricante/
+    # tipo (ej. "HPE QuickSpecs", "Microsoft 365") y URL de origen si vino por web.
+    vendor: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    origin_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

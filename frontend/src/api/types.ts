@@ -115,6 +115,8 @@ export interface ProposalDraft {
   fecha: string | null;
   secciones: ProposalSection[];
   economica: QuoteDraft;
+  /** Validación automática contra fuentes aprobadas (se llena al crear). */
+  validacion?: ValidationReport | null;
 }
 
 export interface ProposalResult {

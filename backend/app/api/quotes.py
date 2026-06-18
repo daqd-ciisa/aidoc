@@ -211,6 +211,37 @@ async def _combine_precedents(
     return "\n\n".join(blocks), all_chunks, based_on
 
 
+async def _run_validation(
+    db: AsyncSession, tenant_id: str, proposal: ProposalDraft
+) -> ValidationReport | None:
+    """Valida la propuesta contra las fuentes aprobadas al CREARLA (best-effort).
+
+    Devuelve None si no hay fuentes configuradas o si la validación falla — nunca
+    rompe la generación de la propuesta."""
+    try:
+        url_rows = list(
+            await db.scalars(
+                select(ApprovedUrl).where(ApprovedUrl.tenant_id == tenant_id)
+            )
+        )
+        has_reference = await db.scalar(
+            select(Document.id)
+            .where(
+                Document.tenant_id == tenant_id,
+                Document.doc_type == DocumentType.REFERENCE.value,
+                Document.status == DocumentStatus.INDEXED.value,
+            )
+            .limit(1)
+        )
+        if not url_rows and not has_reference:
+            return None
+        live_chunks = await fetch_live_chunks([(r.url, r.label) for r in url_rows])
+        return await validate_proposal(proposal, tenant_id, live_chunks)
+    except Exception:  # noqa: BLE001
+        logger.exception("Validación automática falló (se continúa sin ella)")
+        return None
+
+
 @router.post("/precedents")
 async def find_precedents(
     req: PrecedentRequest,
@@ -385,7 +416,10 @@ async def proposal_from_precedent(
             status_code=502, detail=f"Generación falló: {exc}"
         ) from exc
 
-    # 3. Persistir (la propuesta completa vive en Quote.data con kind="proposal").
+    # 3. Validar automáticamente contra las fuentes aprobadas (best-effort).
+    proposal.validacion = await _run_validation(db, tenant_id, proposal)
+
+    # 4. Persistir (la propuesta completa vive en Quote.data con kind="proposal").
     proposal.economica.valida_hasta = (
         proposal.economica.valida_hasta or _default_valida_hasta()
     )
@@ -491,6 +525,9 @@ async def proposal_from_scratch(
         raise HTTPException(
             status_code=502, detail=f"Generación falló: {exc}"
         ) from exc
+
+    # Validar automáticamente contra las fuentes aprobadas (best-effort).
+    proposal.validacion = await _run_validation(db, tenant_id, proposal)
 
     proposal.economica.valida_hasta = (
         proposal.economica.valida_hasta or _default_valida_hasta()

@@ -32,6 +32,7 @@ from app.connectors.web import fetch_url
 from app.quotes.extractor import _parse_json
 from app.quotes.proposal import ProposalDraft
 from app.quotes.schema import QuoteDraft
+from app.quotes.validation_schema import ClaimVerdict, ValidationReport
 from app.services.embeddings import get_embeddings
 from app.services.llm import get_chat_llm
 
@@ -159,24 +160,7 @@ def _rank_live(
     return ranked[:k]
 
 
-# ── Modelo de salida ──────────────────────────────────────────────────────────
-
-
-class ClaimVerdict(BaseModel):
-    afirmacion: str
-    estado: str  # respaldado | contradice | sin_respaldo
-    fuente: str | None = None      # nombre/etiqueta de la fuente que la respalda
-    fuente_url: str | None = None  # URL aprobada (si vino de una fuente en vivo)
-    snippet: str | None = None
-    motivo: str | None = None
-
-
-class ValidationReport(BaseModel):
-    corpus_vacio: bool = False  # no hay URLs aprobadas ni documentos reference
-    afirmaciones: list[ClaimVerdict] = Field(default_factory=list)
-    respaldadas: int = 0
-    contradichas: int = 0
-    sin_respaldo: int = 0
+# El modelo de salida (ClaimVerdict, ValidationReport) vive en validation_schema.
 
 
 # ── Extracción de afirmaciones ─────────────────────────────────────────────────

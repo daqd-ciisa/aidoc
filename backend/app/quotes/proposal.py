@@ -22,6 +22,7 @@ from app.quotes.extractor import (
     strip_precedent_labels,
 )
 from app.quotes.schema import QuoteDraft
+from app.quotes.validation_schema import ValidationReport
 from app.services.llm import get_chat_llm
 
 
@@ -45,6 +46,9 @@ class ProposalDraft(BaseModel):
     fecha: str | None = None
     secciones: list[ProposalSection] = Field(default_factory=list)
     economica: QuoteDraft
+    # Validación automática contra fuentes aprobadas (se llena al crear; None si
+    # no hay fuentes o la validación no corrió).
+    validacion: ValidationReport | None = None
 
 
 # ── Boilerplate (texto fijo de CiiSA) ─────────────────────────────────────────────

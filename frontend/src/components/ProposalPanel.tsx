@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Check,
+  ChevronDown,
   ExternalLink,
   FileDown,
   FileText,
@@ -23,12 +24,7 @@ import type {
   QuoteItem,
   ValidationReport,
 } from "../api/types";
-import {
-  downloadQuoteDocx,
-  downloadQuotePdf,
-  updateProposal,
-  validateQuote,
-} from "../api/quotes";
+import { downloadQuoteDocx, downloadQuotePdf, updateProposal } from "../api/quotes";
 
 const IVA_RATE = 0.16;
 
@@ -75,8 +71,7 @@ export default function ProposalPanel({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [downloading, setDownloading] = useState<"pdf" | "docx" | null>(null);
-  const [validating, setValidating] = useState(false);
-  const [report, setReport] = useState<ValidationReport | null>(null);
+  const [showValidation, setShowValidation] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const econ = form.economica;
@@ -169,22 +164,6 @@ export default function ProposalPanel({
     }
   }
 
-  async function runValidation() {
-    // Guardar primero para validar exactamente lo que se ve en pantalla.
-    const updated = await save();
-    if (!updated) return;
-    setValidating(true);
-    setReport(null);
-    setErr(null);
-    try {
-      setReport(await validateQuote(quoteId));
-    } catch (e) {
-      setErr(String(e instanceof Error ? e.message : e));
-    } finally {
-      setValidating(false);
-    }
-  }
-
   async function saveAndDownload(format: "pdf" | "docx") {
     const updated = await save();
     if (!updated) return;
@@ -241,6 +220,19 @@ export default function ProposalPanel({
                   {basedOn.map((b) => b.filename).join(", ")}
                 </span>
               </span>
+            </div>
+          )}
+
+          {form.validacion && form.validacion.afirmaciones.length > 0 && (
+            <div className="mb-4">
+              <ValidationLegend
+                report={form.validacion}
+                open={showValidation}
+                onToggle={() => setShowValidation((v) => !v)}
+              />
+              {showValidation && (
+                <ValidationReportView report={form.validacion} />
+              )}
             </div>
           )}
 
@@ -337,8 +329,6 @@ export default function ProposalPanel({
             )}
           </div>
 
-          {report && <ValidationReportView report={report} />}
-
           {err && (
             <div className="mt-4 rounded-lg bg-red-50 px-3 py-2.5 text-xs text-red-600 ring-1 ring-red-200 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/30">
               {err}
@@ -348,19 +338,6 @@ export default function ProposalPanel({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 border-t border-surface-200 bg-surface-50 px-6 py-3.5 dark:border-surface-700 dark:bg-surface-900/50">
-          <button
-            onClick={runValidation}
-            disabled={saving || validating || downloading !== null}
-            title="Validar las afirmaciones técnicas contra las fuentes aprobadas del fabricante"
-            className="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-surface-300 bg-white px-3 py-1.5 text-xs font-medium text-surface-700 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 disabled:opacity-50 dark:border-surface-700 dark:bg-surface-800 dark:text-surface-200 dark:hover:border-brand-600 dark:hover:bg-brand-500/10"
-          >
-            {validating ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <ShieldCheck className="h-3.5 w-3.5" />
-            )}
-            Validar con fuentes
-          </button>
           {saved && (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 animate-fade-in dark:text-emerald-400">
               <Check className="h-3.5 w-3.5" />
@@ -588,6 +565,41 @@ const ESTADO_CFG = {
   },
 } as const;
 
+function ValidationLegend({
+  report,
+  open,
+  onToggle,
+}: {
+  report: ValidationReport;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const worst =
+    report.contradichas > 0
+      ? "contradice"
+      : report.sin_respaldo > 0
+        ? "sin_respaldo"
+        : "respaldado";
+  const cfg = ESTADO_CFG[worst];
+  const Icon = cfg.icon;
+  return (
+    <button
+      onClick={onToggle}
+      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ring-1 ring-inset transition ${cfg.cls}`}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      <span>Validado contra fuentes aprobadas</span>
+      <span className="font-normal opacity-80">
+        · {report.respaldadas} respaldada(s) · {report.sin_respaldo} sin respaldo
+        {report.contradichas > 0 ? ` · ${report.contradichas} contradicen` : ""}
+      </span>
+      <ChevronDown
+        className={`ml-auto h-4 w-4 shrink-0 transition ${open ? "rotate-180" : ""}`}
+      />
+    </button>
+  );
+}
+
 function ValidationReportView({ report }: { report: ValidationReport }) {
   if (report.corpus_vacio) {
     return (
@@ -610,23 +622,7 @@ function ValidationReportView({ report }: { report: ValidationReport }) {
   }
 
   return (
-    <div className="mt-6 border-t border-surface-200 pt-4 dark:border-surface-700">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-bold text-surface-800 dark:text-surface-100">
-          Validación contra fuentes aprobadas
-        </h3>
-        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/30">
-          {report.respaldadas} respaldada(s)
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/30">
-          {report.sin_respaldo} sin respaldo
-        </span>
-        {report.contradichas > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 ring-1 ring-red-200 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/30">
-            {report.contradichas} contradicción(es)
-          </span>
-        )}
-      </div>
+    <div className="mt-2">
       <ul className="space-y-2">
         {report.afirmaciones.map((v: ClaimVerdict, i: number) => {
           const cfg = ESTADO_CFG[v.estado] ?? ESTADO_CFG.sin_respaldo;

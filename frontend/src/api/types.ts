@@ -9,6 +9,13 @@ export interface User {
   created_at: string;
 }
 
+export interface Organization {
+  id: string;
+  slug: string;
+  name: string;
+  created_at: string;
+}
+
 export type DocumentStatus = "pending" | "processing" | "indexed" | "failed";
 
 export interface DocumentRead {

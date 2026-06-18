@@ -66,6 +66,11 @@ class UserCreate(BaseModel):
     role: str = ROLE_MEMBER
 
 
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 # ─── Login / me ───────────────────────────────────────────────────────────────
 
 
@@ -85,6 +90,24 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenR
 
 @router.get("/me")
 async def me(user: User = Depends(get_current_user)) -> UserRead:
+    return UserRead.model_validate(user)
+
+
+@router.post("/change-password")
+async def change_password(
+    req: PasswordChange,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> UserRead:
+    """El usuario autenticado cambia su propia contraseña."""
+    if not verify_password(req.current_password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La contraseña actual es incorrecta.",
+        )
+    user.password_hash = hash_password(req.new_password)
+    await db.commit()
+    await db.refresh(user)
     return UserRead.model_validate(user)
 
 

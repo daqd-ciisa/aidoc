@@ -9,6 +9,7 @@ import {
   PanelLeftOpen,
   Receipt,
   ShieldCheck,
+  Shield,
   Sparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -16,6 +17,7 @@ import ChatPage from "./pages/ChatPage";
 import LibraryPage from "./pages/LibraryPage";
 import QuotesPage from "./pages/QuotesPage";
 import SourcesPage from "./pages/SourcesPage";
+import AdminPage from "./pages/AdminPage";
 import LoginPage from "./pages/LoginPage";
 import ThemeToggle from "./components/ThemeToggle";
 import { useAuth } from "./context/AuthContext";
@@ -63,6 +65,11 @@ export default function App() {
   });
 
   const { user, loading, logout } = useAuth();
+  // El super-admin no pertenece a una organización: las páginas de datos
+  // (Biblioteca/Chat/…) le fallan, así que solo ve Administración.
+  const isSuper = user?.role === "superadmin";
+  const canAdmin = isSuper || user?.role === "admin";
+  const home = isSuper ? "/admin" : "/library";
 
   function toggle() {
     setCollapsed((c) => {
@@ -133,10 +140,17 @@ export default function App() {
               Espacio de trabajo
             </p>
           )}
-          <NavItem to="/library" label="Biblioteca" icon={Library} collapsed={collapsed} />
-          <NavItem to="/sources" label="Fuentes externas" icon={ShieldCheck} collapsed={collapsed} />
-          <NavItem to="/chat" label="Chat" icon={MessagesSquare} collapsed={collapsed} />
-          <NavItem to="/quotes" label="Cotizaciones" icon={Receipt} collapsed={collapsed} />
+          {!isSuper && (
+            <>
+              <NavItem to="/library" label="Biblioteca" icon={Library} collapsed={collapsed} />
+              <NavItem to="/sources" label="Fuentes externas" icon={ShieldCheck} collapsed={collapsed} />
+              <NavItem to="/chat" label="Chat" icon={MessagesSquare} collapsed={collapsed} />
+              <NavItem to="/quotes" label="Cotizaciones" icon={Receipt} collapsed={collapsed} />
+            </>
+          )}
+          {canAdmin && (
+            <NavItem to="/admin" label="Administración" icon={Shield} collapsed={collapsed} />
+          )}
         </nav>
 
         {/* Footer: usuario + sesión */}
@@ -174,11 +188,13 @@ export default function App() {
 
       <main className="flex-1 overflow-hidden">
         <Routes>
-          <Route path="/" element={<Navigate to="/library" replace />} />
+          <Route path="/" element={<Navigate to={home} replace />} />
           <Route path="/library" element={<LibraryPage />} />
           <Route path="/sources" element={<SourcesPage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/quotes" element={<QuotesPage />} />
+          {canAdmin && <Route path="/admin" element={<AdminPage />} />}
+          <Route path="*" element={<Navigate to={home} replace />} />
         </Routes>
       </main>
     </div>

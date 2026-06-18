@@ -11,6 +11,7 @@ plantilla. Estrategia "punto medio" por sección:
 from __future__ import annotations
 
 import asyncio
+import re
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
@@ -154,7 +155,8 @@ _SECTIONS_SYSTEM = (
     "Si hay varios, usá el más cercano como base y completá lo que falte con los otros.\n"
     "Devolvé ÚNICAMENTE un objeto JSON con EXACTAMENTE estas claves (cada valor es texto; "
     'podés usar viñetas con "- " y saltos de línea):\n'
-    '{"objetivo": string, "alcances": string, "limitantes": string, "terminos": string}\n'
+    '{"objetivo": string, "alcances": string, "limitantes": string, "terminos": string, '
+    '"adicionales": [{"titulo": string, "contenido": string}]}\n'
     "Guía:\n"
     '- "objetivo": objetivo y antecedentes del proyecto para el cliente del pedido.\n'
     '- "alcances": los alcances técnicos / servicios incluidos, reusando los del '
@@ -163,6 +165,13 @@ _SECTIONS_SYSTEM = (
     '- "terminos": términos y condiciones del servicio (horarios, tiempos de respuesta, '
     "responsabilidades). NO incluyas vigencia de la propuesta, precios, IVA ni formas de "
     "pago: eso va en otra sección.\n"
+    'Además, si el precedente o el pedido lo ameritan, agregá en "adicionales" las '
+    "SECCIONES PERTINENTES que tenga el precedente y que NO sean ninguna de las de "
+    "arriba — por ejemplo Cronograma / Plan de trabajo, Metodología, Entregables, "
+    "Supuestos. Cada una con su título y contenido, adaptada al pedido. Si una no "
+    "aplica, NO la incluyas. NO agregues Índice/Tabla de contenido (es estructura). "
+    'Formato: "adicionales": [{"titulo": "...", "contenido": "..."}] (lista vacía si '
+    "ninguna aplica).\n"
     "Reglas: NO copies fechas absolutas ni vigencias del precedente. NO inventes precios. "
     "NO uses las etiquetas internas [PRECEDENTE n] en el texto de salida. "
     "Mantené el tono profesional y formal de CiiSA. No incluyas nada fuera del JSON."
@@ -175,7 +184,8 @@ _SECTIONS_SCRATCH_SYSTEM = (
     "del PEDIDO del cliente, con el tono profesional y formal de CiiSA.\n"
     "Devolvé ÚNICAMENTE un objeto JSON con EXACTAMENTE estas claves (cada valor es texto; "
     'podés usar viñetas con "- " y saltos de línea):\n'
-    '{"objetivo": string, "alcances": string, "limitantes": string, "terminos": string}\n'
+    '{"objetivo": string, "alcances": string, "limitantes": string, "terminos": string, '
+    '"adicionales": [{"titulo": string, "contenido": string}]}\n'
     "Guía:\n"
     '- "objetivo": objetivo y antecedentes del proyecto para el cliente del pedido.\n'
     '- "alcances": los alcances técnicos / servicios incluidos, inferidos del pedido.\n'
@@ -183,8 +193,17 @@ _SECTIONS_SCRATCH_SYSTEM = (
     '- "terminos": términos y condiciones del servicio (horarios, tiempos de respuesta, '
     "responsabilidades). NO incluyas vigencia de la propuesta, precios, IVA ni formas de "
     "pago: eso va en otra sección.\n"
+    'Si el pedido lo amerita, agregá en "adicionales" secciones PERTINENTES (ej. '
+    "Cronograma / Plan de trabajo, Metodología, Entregables); si ninguna aplica, "
+    "lista vacía. NO agregues Índice. Formato adicionales: "
+    '[{"titulo": "...", "contenido": "..."}].\n'
     "Reglas: NO inventes precios ni fechas absolutas. No incluyas nada fuera del JSON."
 )
+
+
+class _ExtraSection(BaseModel):
+    titulo: str | None = None
+    contenido: str | None = None
 
 
 class _SectionsLLM(BaseModel):
@@ -192,6 +211,7 @@ class _SectionsLLM(BaseModel):
     alcances: str | None = None
     limitantes: str | None = None
     terminos: str | None = None
+    adicionales: list[_ExtraSection] = Field(default_factory=list)
 
 
 async def _generate_sections(precedent: str, request: str) -> _SectionsLLM:
@@ -227,6 +247,21 @@ async def _generate_sections_scratch(request: str) -> _SectionsLLM:
     return _SectionsLLM.model_validate(_parse_json(content))
 
 
+_MAX_EXTRA_SECTIONS = 4  # tope de secciones adicionales para no inflar la propuesta
+
+
+def _slug(titulo: str, used: set[str]) -> str:
+    """Clave única (kebab-case) para una sección a partir de su título."""
+    base = re.sub(r"[^a-z0-9]+", "-", titulo.lower().strip()).strip("-") or "seccion"
+    key = base
+    i = 2
+    while key in used:
+        key = f"{base}-{i}"
+        i += 1
+    used.add(key)
+    return key
+
+
 async def build_proposal(
     *, precedent: str | None, request: str, fecha: str, catalog: str | None = None
 ) -> ProposalDraft:
@@ -249,6 +284,25 @@ async def build_proposal(
     # Limpiar etiquetas internas [PRECEDENTE n] que el LLM pueda haber filtrado.
     for _f in ("objetivo", "alcances", "limitantes", "terminos"):
         setattr(narr, _f, strip_precedent_labels(getattr(narr, _f)))
+
+    # Secciones adicionales pertinentes (cronograma, metodología…) que el LLM detectó.
+    _FIXED_KEYS = {
+        "acerca", "confidencialidad", "objetivo", "alcances", "limitantes",
+        "terminos", "economica", "condiciones_comerciales",
+    }
+    used_keys = set(_FIXED_KEYS)
+    extra_sections: list[ProposalSection] = []
+    for ex in (narr.adicionales or [])[:_MAX_EXTRA_SECTIONS]:
+        titulo = (ex.titulo or "").strip()
+        contenido = strip_precedent_labels((ex.contenido or "").strip())
+        if not titulo or not contenido:
+            continue
+        extra_sections.append(
+            ProposalSection(
+                key=_slug(titulo, used_keys), titulo=titulo,
+                contenido=contenido, fuente="generado",
+            )
+        )
     # Quitar ítems "placeholder" que el LLM dejó con cantidad 0 (modelos no pedidos).
     # SOLO con precedente: en modo "desde cero" el esqueleto trae ítems con cantidad
     # null a propósito (precios/cantidades para completar a mano) y no hay que borrarlos.
@@ -266,6 +320,7 @@ async def build_proposal(
         ),
         ProposalSection(key="objetivo", titulo="Objetivo", contenido=narr.objetivo or "", fuente="generado"),
         ProposalSection(key="alcances", titulo="Alcances", contenido=narr.alcances or "", fuente="generado"),
+        *extra_sections,
         ProposalSection(
             key="limitantes", titulo="Limitantes y no incluido",
             contenido=narr.limitantes or "", fuente="generado",

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -81,6 +81,7 @@ export default function ProposalPanel({
   const [applied, setApplied] = useState<Set<string>>(new Set());
   const [revalidating, setRevalidating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const sectionSeq = useRef(0);
 
   const econ = form.economica;
   const cur = econ.moneda;
@@ -102,6 +103,34 @@ export default function ProposalPanel({
         s.key === key ? { ...s, contenido } : s
       ),
     }));
+  }
+  function patchSectionTitle(key: string, titulo: string) {
+    setForm((f) => ({
+      ...f,
+      secciones: f.secciones.map((s) => (s.key === key ? { ...s, titulo } : s)),
+    }));
+  }
+  function removeSection(key: string) {
+    setForm((f) => ({
+      ...f,
+      secciones: f.secciones.filter((s) => s.key !== key),
+    }));
+  }
+  function addSection() {
+    const key = `custom-${(sectionSeq.current += 1)}`;
+    const nueva: ProposalSection = {
+      key,
+      titulo: "Nueva sección",
+      contenido: "",
+      fuente: "generado",
+    };
+    setForm((f) => {
+      const idx = f.secciones.findIndex((s) => s.key === "economica");
+      const secciones = [...f.secciones];
+      // Insertar antes de la económica (o al final si no hay).
+      secciones.splice(idx >= 0 ? idx : secciones.length, 0, nueva);
+      return { ...f, secciones };
+    });
   }
   function patchEcon(patch: Partial<typeof econ>) {
     setForm((f) => ({ ...f, economica: { ...f.economica, ...patch } }));
@@ -390,12 +419,21 @@ export default function ProposalPanel({
               ) : (
                 <div key={sec.key}>
                   <div className="mb-1 flex items-center gap-2">
-                    <label className="text-sm font-bold text-surface-800 dark:text-surface-100">
-                      {sec.titulo}
-                    </label>
-                    <span className="rounded-full bg-surface-100 px-1.5 py-0.5 text-[10px] font-medium text-surface-500 dark:bg-surface-700 dark:text-surface-400">
+                    <input
+                      className="flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm font-bold text-surface-800 outline-none transition hover:border-surface-200 focus:border-brand-300 focus:bg-white dark:text-surface-100 dark:hover:border-surface-700 dark:focus:border-brand-600 dark:focus:bg-surface-900"
+                      value={sec.titulo}
+                      onChange={(e) => patchSectionTitle(sec.key, e.target.value)}
+                    />
+                    <span className="shrink-0 rounded-full bg-surface-100 px-1.5 py-0.5 text-[10px] font-medium text-surface-500 dark:bg-surface-700 dark:text-surface-400">
                       {FUENTE_LABEL[sec.fuente] ?? sec.fuente}
                     </span>
+                    <button
+                      onClick={() => removeSection(sec.key)}
+                      title="Eliminar sección"
+                      className="shrink-0 rounded-md p-1 text-surface-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                   <textarea
                     className={`${inputCls} min-h-[90px] resize-y leading-relaxed`}
@@ -405,6 +443,13 @@ export default function ProposalPanel({
                 </div>
               )
             )}
+            <button
+              onClick={addSection}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-surface-300 py-2 text-xs font-medium text-surface-500 transition hover:border-brand-400 hover:text-brand-600 dark:border-surface-700 dark:text-surface-400 dark:hover:border-brand-500 dark:hover:text-brand-400"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Agregar sección
+            </button>
           </div>
 
           {err && (

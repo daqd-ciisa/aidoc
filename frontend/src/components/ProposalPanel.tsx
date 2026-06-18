@@ -8,6 +8,7 @@ import {
   FileType2,
   Loader2,
   Plus,
+  RefreshCw,
   ScrollText,
   Save,
   ShieldAlert,
@@ -24,7 +25,12 @@ import type {
   QuoteItem,
   ValidationReport,
 } from "../api/types";
-import { downloadQuoteDocx, downloadQuotePdf, updateProposal } from "../api/quotes";
+import {
+  downloadQuoteDocx,
+  downloadQuotePdf,
+  updateProposal,
+  validateQuote,
+} from "../api/quotes";
 
 const IVA_RATE = 0.16;
 
@@ -72,6 +78,8 @@ export default function ProposalPanel({
   const [saved, setSaved] = useState(false);
   const [downloading, setDownloading] = useState<"pdf" | "docx" | null>(null);
   const [showValidation, setShowValidation] = useState(false);
+  const [applied, setApplied] = useState<Set<string>>(new Set());
+  const [revalidating, setRevalidating] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const econ = form.economica;
@@ -164,6 +172,57 @@ export default function ProposalPanel({
     }
   }
 
+  // Modo B: reemplaza el texto original de la afirmación por la corrección de la
+  // fuente, en las secciones y los ítems editables.
+  function applyCorrection(v: ClaimVerdict) {
+    if (!v.origen || !v.correccion) return;
+    const from = v.origen;
+    const to = v.correccion;
+    const has = (s: string | null) => !!s && s.includes(from);
+    const matched =
+      form.secciones.some((sec) => has(sec.contenido)) ||
+      form.economica.items.some((it) => has(it.servicio) || has(it.descripcion));
+    if (!matched) {
+      setErr(
+        `No encontré el texto exacto para corregir automáticamente. ` +
+          `Editá a mano con el dato correcto: "${to}"`
+      );
+      return;
+    }
+    const repl = (s: string | null) => (s && s.includes(from) ? s.split(from).join(to) : s);
+    setForm((f) => ({
+      ...f,
+      secciones: f.secciones.map((sec) => ({ ...sec, contenido: repl(sec.contenido) ?? sec.contenido })),
+      economica: {
+        ...f.economica,
+        items: f.economica.items.map((it) => ({
+          ...it,
+          servicio: repl(it.servicio) ?? it.servicio,
+          descripcion: repl(it.descripcion),
+        })),
+      },
+    }));
+    setApplied((prev) => new Set(prev).add(v.afirmacion));
+    setErr(null);
+  }
+
+  // Guarda los cambios y vuelve a validar para refrescar la leyenda.
+  async function saveAndRevalidate() {
+    const updated = await save();
+    if (!updated) return;
+    setRevalidating(true);
+    try {
+      const rep = await validateQuote(quoteId);
+      setForm((f) => ({ ...f, validacion: rep }));
+      setApplied(new Set());
+      setShowValidation(true);
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      setRevalidating(false);
+    }
+  }
+
   async function saveAndDownload(format: "pdf" | "docx") {
     const updated = await save();
     if (!updated) return;
@@ -231,7 +290,26 @@ export default function ProposalPanel({
                 onToggle={() => setShowValidation((v) => !v)}
               />
               {showValidation && (
-                <ValidationReportView report={form.validacion} />
+                <ValidationReportView
+                  report={form.validacion}
+                  onApply={applyCorrection}
+                  applied={applied}
+                />
+              )}
+              {applied.size > 0 && (
+                <button
+                  onClick={saveAndRevalidate}
+                  disabled={saving || revalidating}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white shadow-soft transition hover:bg-brand-600 disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-400"
+                >
+                  {revalidating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  Guardar y re-validar ({applied.size} corrección
+                  {applied.size > 1 ? "es" : ""})
+                </button>
               )}
             </div>
           )}
@@ -600,7 +678,15 @@ function ValidationLegend({
   );
 }
 
-function ValidationReportView({ report }: { report: ValidationReport }) {
+function ValidationReportView({
+  report,
+  onApply,
+  applied,
+}: {
+  report: ValidationReport;
+  onApply: (v: ClaimVerdict) => void;
+  applied: Set<string>;
+}) {
   if (report.corpus_vacio) {
     return (
       <div className="mt-5 flex items-start gap-2 rounded-lg bg-amber-50 px-3.5 py-3 text-xs text-amber-700 ring-1 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/30">
@@ -672,6 +758,28 @@ function ValidationReportView({ report }: { report: ValidationReport }) {
                     <p className="mt-1 border-l-2 border-surface-200 pl-2 text-[11px] italic text-surface-400 dark:border-surface-600 dark:text-surface-500">
                       “{v.snippet}”
                     </p>
+                  )}
+                  {v.estado === "contradice" && v.correccion && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-surface-50 px-2.5 py-1.5 dark:bg-surface-900/50">
+                      <span className="text-[11px] text-surface-600 dark:text-surface-300">
+                        Corrección sugerida:{" "}
+                        <span className="font-medium text-surface-800 dark:text-surface-100">
+                          {v.correccion}
+                        </span>
+                      </span>
+                      {applied.has(v.afirmacion) ? (
+                        <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                          <Check className="h-3 w-3" /> Aplicada
+                        </span>
+                      ) : v.origen ? (
+                        <button
+                          onClick={() => onApply(v)}
+                          className="ml-auto inline-flex items-center rounded-md bg-brand px-2 py-0.5 text-[11px] font-medium text-white transition hover:bg-brand-600 dark:bg-brand-500 dark:hover:bg-brand-400"
+                        >
+                          Aplicar
+                        </button>
+                      ) : null}
+                    </div>
                   )}
                 </div>
               </div>

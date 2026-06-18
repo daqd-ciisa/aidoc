@@ -16,6 +16,11 @@ class ClaimVerdict(BaseModel):
     fuente_url: str | None = None  # URL aprobada (si vino de una fuente en vivo)
     snippet: str | None = None
     motivo: str | None = None
+    # Modo B (corrección asistida): texto VERBATIM de la propuesta del que salió la
+    # afirmación (para reemplazar), y la corrección sugerida según la fuente (solo
+    # cuando estado="contradice").
+    origen: str | None = None
+    correccion: str | None = None
 
 
 class ValidationReport(BaseModel):

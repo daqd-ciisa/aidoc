@@ -149,6 +149,10 @@ export interface ClaimVerdict {
   fuente_url: string | null;
   snippet: string | null;
   motivo: string | null;
+  /** Texto verbatim de la propuesta del que salió la afirmación (para corregir). */
+  origen: string | null;
+  /** Corrección sugerida según la fuente (solo cuando estado="contradice"). */
+  correccion: string | null;
 }
 
 export interface ApprovedUrl {

@@ -175,32 +175,39 @@ _CLAIMS_SYSTEM = (
     "concreta.\n"
     "Cada afirmación debe ser ATÓMICA (una sola cosa) y AUTOCONTENIDA (entendible "
     "sin contexto: incluí el producto/modelo al que se refiere).\n"
+    "Para cada una devolvé también 'origen': el fragmento de texto EXACTO Y "
+    "VERBATIM de la propuesta del que sacaste la afirmación (copiá tal cual, sin "
+    "reformular; sirve para corregirlo después).\n"
     f"Devolvé como máximo {_MAX_CLAIMS}, ÚNICAMENTE este JSON: "
-    '{"afirmaciones": ["...", "..."]}\n'
+    '{"afirmaciones": [{"afirmacion": "...", "origen": "..."}]}\n'
     'Si no hay afirmaciones técnicas verificables, devolvé {"afirmaciones": []}.'
 )
 
 
-class _Claims(BaseModel):
-    afirmaciones: list[str] = Field(default_factory=list)
-
-
-async def _extract_claims(text: str) -> list[str]:
-    llm = get_chat_llm(streaming=False, temperature=0.0, max_tokens=1024)
+async def _extract_claims(text: str) -> list[tuple[str, str | None]]:
+    """Devuelve [(afirmacion, origen_verbatim)]."""
+    llm = get_chat_llm(streaming=False, temperature=0.0, max_tokens=1536)
     response = await llm.ainvoke(
         [SystemMessage(content=_CLAIMS_SYSTEM), HumanMessage(content=text)]
     )
     content = (
         response.content if isinstance(response.content, str) else str(response.content)
     )
-    data = _Claims.model_validate(_parse_json(content))
-    out: list[str] = []
+    data = _parse_json(content)
+    raw = data.get("afirmaciones", []) if isinstance(data, dict) else []
+    out: list[tuple[str, str | None]] = []
     seen: set[str] = set()
-    for a in data.afirmaciones:
-        a = (a or "").strip()
-        if a and a.lower() not in seen:
-            seen.add(a.lower())
-            out.append(a)
+    for item in raw:
+        # Tolerante: el LLM puede devolver objetos {afirmacion,origen} o strings.
+        if isinstance(item, dict):
+            afirm = str(item.get("afirmacion") or "").strip()
+            origen = (item.get("origen") or "").strip() or None
+        else:
+            afirm = str(item or "").strip()
+            origen = None
+        if afirm and afirm.lower() not in seen:
+            seen.add(afirm.lower())
+            out.append((afirm, origen))
     return out[:_MAX_CLAIMS]
 
 
@@ -216,8 +223,12 @@ _VERDICT_SYSTEM = (
     '- "sin_respaldo": los fragmentos no permiten confirmar ni desmentir.\n'
     "Sé estricto: si no está claramente confirmado, es sin_respaldo. NO uses "
     "conocimiento externo, SOLO los fragmentos.\n"
+    'Si "contradice", agregá "correccion": el dato CORRECTO según la fuente, como '
+    "una frase breve lista para reemplazar al texto equivocado (sin explicaciones, "
+    "solo el valor/característica correcto). En los demás casos, correccion=null.\n"
     'Devolvé ÚNICAMENTE este JSON: {"estado": "respaldado|contradice|sin_respaldo", '
-    '"cita": <número del fragmento [n] decisivo o null>, "motivo": "<una frase breve>"}'
+    '"cita": <número del fragmento [n] decisivo o null>, "motivo": "<una frase '
+    'breve>", "correccion": "<dato correcto o null>"}'
 )
 
 
@@ -225,6 +236,7 @@ class _Verdict(BaseModel):
     estado: str | None = None
     cita: int | None = None
     motivo: str | None = None
+    correccion: str | None = None
 
 
 @dataclass
@@ -235,7 +247,10 @@ class _Candidate:
 
 
 async def _verify_claim(
-    afirmacion: str, tenant_id: str, live_chunks: list[LiveChunk]
+    afirmacion: str,
+    origen: str | None,
+    tenant_id: str,
+    live_chunks: list[LiveChunk],
 ) -> ClaimVerdict:
     # Vector de la afirmación para el ranking semántico de las fuentes en vivo.
     claim_vec: list[float] | None = None
@@ -265,6 +280,7 @@ async def _verify_claim(
         return ClaimVerdict(
             afirmacion=afirmacion,
             estado=SIN_RESPALDO,
+            origen=origen,
             motivo="No se encontró en las fuentes aprobadas.",
         )
 
@@ -290,7 +306,10 @@ async def _verify_claim(
     except Exception:  # noqa: BLE001
         logger.warning("Fallo verificando una afirmación", exc_info=True)
         return ClaimVerdict(
-            afirmacion=afirmacion, estado=SIN_RESPALDO, motivo="No se pudo verificar."
+            afirmacion=afirmacion,
+            estado=SIN_RESPALDO,
+            origen=origen,
+            motivo="No se pudo verificar.",
         )
 
     estado = (verdict.estado or "").strip().lower()
@@ -304,6 +323,11 @@ async def _verify_claim(
         fuente_url = cited.url
         snippet = cited.text[:300]
 
+    # La corrección solo aplica si contradice (y hay de dónde reemplazar).
+    correccion = None
+    if estado == CONTRADICE:
+        correccion = (verdict.correccion or "").strip() or None
+
     return ClaimVerdict(
         afirmacion=afirmacion,
         estado=estado,
@@ -311,6 +335,8 @@ async def _verify_claim(
         fuente_url=fuente_url,
         snippet=snippet,
         motivo=(verdict.motivo or "").strip() or None,
+        origen=origen,
+        correccion=correccion,
     )
 
 
@@ -327,7 +353,7 @@ async def _run(
     if not claims:
         return ValidationReport()
     verdicts = await asyncio.gather(
-        *(_verify_claim(c, tenant_id, live_chunks) for c in claims)
+        *(_verify_claim(afirm, origen, tenant_id, live_chunks) for afirm, origen in claims)
     )
     report = ValidationReport(afirmaciones=list(verdicts))
     report.respaldadas = sum(1 for v in verdicts if v.estado == RESPALDADO)

@@ -12,6 +12,7 @@ import { PublicClientApplication } from "@azure/msal-browser";
 import {
   getOneDriveClientId,
   setOneDriveClientId,
+  getMsAuthority,
   type DriveItem,
 } from "./oneDrive";
 
@@ -48,21 +49,24 @@ export function isSharePointConfigured(): boolean {
 
 let _pca: PublicClientApplication | null = null;
 let _initClientId: string | null = null;
+let _initAuthority: string | null = null;
 
 async function getPca(): Promise<PublicClientApplication> {
   const clientId = getSharePointClientId();
   if (!clientId) throw new Error("SharePoint no está configurado.");
-  if (!_pca || _initClientId !== clientId) {
+  const authority = getMsAuthority();
+  if (!_pca || _initClientId !== clientId || _initAuthority !== authority) {
     _pca = new PublicClientApplication({
       auth: {
         clientId,
-        authority: "https://login.microsoftonline.com/common",
+        authority,
         redirectUri: window.location.origin,
       },
       cache: { cacheLocation: "localStorage" },
     });
     await _pca.initialize();
     _initClientId = clientId;
+    _initAuthority = authority;
   }
   return _pca;
 }

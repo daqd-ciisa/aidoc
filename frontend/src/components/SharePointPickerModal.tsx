@@ -24,7 +24,7 @@ import {
   type DriveItem,
   type DriveLib,
   type SiteItem,
-} from "../lib/sharePoint";
+} from "../lib/sharepoint";
 
 type Step =
   | "config"

@@ -12,6 +12,7 @@ import { PublicClientApplication } from "@azure/msal-browser";
 const env = (import.meta as unknown as { env: Record<string, string | undefined> })
   .env;
 const LS_CLIENT = "aidoc-ms-client-id";
+const LS_TENANT = "aidoc-ms-tenant-id";
 const GRAPH = "https://graph.microsoft.com/v1.0";
 const SCOPES = ["Files.Read"];
 
@@ -42,27 +43,53 @@ export function setOneDriveClientId(clientId: string): void {
   }
 }
 
+/**
+ * Tenant para MSAL. Apps de Azure single-tenant NO admiten el endpoint
+ * `/common` (error AADSTS50194); hay que apuntar al tenant específico. Se puede
+ * fijar por env (VITE_MS_TENANT_ID) o en localStorage; acepta el Directory
+ * (tenant) ID o el dominio (p. ej. `contoso.onmicrosoft.com`). Default `common`
+ * (solo válido si la App registration es multi-tenant).
+ */
+export function getMsTenant(): string {
+  return ls(LS_TENANT) || env.VITE_MS_TENANT_ID || "common";
+}
+
+export function setMsTenant(tenant: string): void {
+  try {
+    localStorage.setItem(LS_TENANT, tenant.trim());
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getMsAuthority(): string {
+  return `https://login.microsoftonline.com/${getMsTenant()}`;
+}
+
 export function isOneDriveConfigured(): boolean {
   return Boolean(getOneDriveClientId());
 }
 
 let _pca: PublicClientApplication | null = null;
 let _initClientId: string | null = null;
+let _initAuthority: string | null = null;
 
 async function getPca(): Promise<PublicClientApplication> {
   const clientId = getOneDriveClientId();
   if (!clientId) throw new Error("OneDrive no está configurado.");
-  if (!_pca || _initClientId !== clientId) {
+  const authority = getMsAuthority();
+  if (!_pca || _initClientId !== clientId || _initAuthority !== authority) {
     _pca = new PublicClientApplication({
       auth: {
         clientId,
-        authority: "https://login.microsoftonline.com/common",
+        authority,
         redirectUri: window.location.origin,
       },
       cache: { cacheLocation: "localStorage" },
     });
     await _pca.initialize();
     _initClientId = clientId;
+    _initAuthority = authority;
   }
   return _pca;
 }

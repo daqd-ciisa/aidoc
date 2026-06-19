@@ -11,7 +11,7 @@ image:
   namespace: axeljuarez          # usuario de Docker Hub
   backendRepo: aidoc-backend     # imagen usada por backend Y worker
   frontendRepo: aidoc-frontend   # imagen nginx + build de la SPA
-  tag: "0.2.0"
+  tag: "0.3.1"
   pullPolicy: IfNotPresent
 
 # Para repos privados: kubectl create secret docker-registry dockerhub-cred ...
